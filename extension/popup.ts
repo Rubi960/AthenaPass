@@ -20,11 +20,13 @@ const EMAIL_STORAGE_KEY = 'AthenaPass_email';
 interface Password {
   name: string;
   password: string;
+  tag?: string;
 }
 
 // ── State ───────────────────────────────────────────────
 let passwords: Password[]  = [];
 let previousScreen: string = 'screen-main';
+let currentEditIndex: number | null = null;  // track which password we're editing
 
 // ═══════════════════════════════════════════════════════
 // EMAIL ENCRYPTION
@@ -183,7 +185,61 @@ async function openSecurityScreen(pwName: string, pwValue?: string): Promise<voi
   await analyzePassword(pwValue);
 }
 
+function openAddEditScreen(mode: 'add' | 'edit', idx?: number): void {
+  previousScreen = 'screen-main';
+  const titleEl = document.getElementById('addEditTitle') as HTMLElement;
+  const nameInput = document.getElementById('addEditName') as HTMLInputElement;
+  const tagInput = document.getElementById('addEditTag') as HTMLInputElement;
+  const pwInput = document.getElementById('addEditPassword') as HTMLInputElement;
+
+  if (mode === 'add') {
+    titleEl.textContent = 'Add password';
+    nameInput.value = '';
+    tagInput.value = '';
+    pwInput.value = '';
+    currentEditIndex = null;
+  } else if (mode === 'edit' && idx !== undefined) {
+    titleEl.textContent = 'Edit password';
+    nameInput.value = passwords[idx].name;
+    tagInput.value = passwords[idx].tag || '';
+    pwInput.value = passwords[idx].password;
+    currentEditIndex = idx;
+  }
+  
+  // Reset password field to hidden
+  pwInput.type = 'password';
+  
+  showScreen('screen-addedit');
+}
+
 document.getElementById('backBtn')!.addEventListener('click', () => showScreen(previousScreen));
+document.getElementById('addEditBackBtn')!.addEventListener('click', () => showScreen(previousScreen));
+
+document.getElementById('addEditCancelBtn')!.addEventListener('click', () => showScreen(previousScreen));
+
+document.getElementById('addEditSaveBtn')!.addEventListener('click', () => {
+  const name = (document.getElementById('addEditName') as HTMLInputElement).value.trim();
+  const tag = (document.getElementById('addEditTag') as HTMLInputElement).value.trim();
+  const pw = (document.getElementById('addEditPassword') as HTMLInputElement).value;
+
+  if (!name || !pw) {
+    alert('Please fill in name and password');
+    return;
+  }
+
+  if (currentEditIndex !== null) {
+    // Edit existing
+    passwords[currentEditIndex] = { name, password: pw, tag: tag || undefined };
+  } else {
+    // Add new
+    passwords.push({ name, password: pw, tag: tag || undefined });
+  }
+
+  // TODO: send to server
+  showScreen(previousScreen);
+  renderPasswordList(passwords);
+  updateTagFilter();
+});
 
 // ═══════════════════════════════════════════════════════
 // LOAD PASSWORDS FROM API
@@ -213,6 +269,7 @@ async function loadPasswords(): Promise<void> {
     ];
   }
   renderPasswordList(passwords);
+  updateTagFilter();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -251,6 +308,11 @@ function renderPasswordList(list: Password[]): void {
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
           </svg>
         </button>
+        <button class="pw-btn edit-btn"  data-idx="${idx}" title="Edit">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
         <button class="pw-btn check-btn" data-idx="${idx}" title="Security check">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"/>
@@ -281,6 +343,13 @@ function renderPasswordList(list: Password[]): void {
     });
   });
 
+  container.querySelectorAll<HTMLButtonElement>('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx!);
+      openAddEditScreen('edit', idx);
+    });
+  });
+
   container.querySelectorAll<HTMLButtonElement>('.check-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = parseInt(btn.dataset.idx!);
@@ -293,9 +362,45 @@ function renderPasswordList(list: Password[]): void {
 (document.getElementById('vaultSearch') as HTMLInputElement)
   .addEventListener('input', (e: Event) => {
     const q        = (e.target as HTMLInputElement).value.toLowerCase();
-    const filtered = passwords.filter(p => p.name.toLowerCase().includes(q));
+    const tag      = (document.getElementById('vaultTagFilter') as HTMLSelectElement).value;
+    const filtered = passwords.filter(p => {
+      const matchName = p.name.toLowerCase().includes(q);
+      const matchTag = !tag || (p.tag === tag);
+      return matchName && matchTag;
+    });
     renderPasswordList(filtered);
   });
+
+// ── Vault Tag filter ───────────────────────────────────
+(document.getElementById('vaultTagFilter') as HTMLSelectElement)
+  .addEventListener('change', (e: Event) => {
+    const q   = (document.getElementById('vaultSearch') as HTMLInputElement).value.toLowerCase();
+    const tag = (e.target as HTMLSelectElement).value;
+    const filtered = passwords.filter(p => {
+      const matchName = p.name.toLowerCase().includes(q);
+      const matchTag = !tag || (p.tag === tag);
+      return matchName && matchTag;
+    });
+    renderPasswordList(filtered);
+  });
+
+document.getElementById('vaultAddBtn')!.addEventListener('click', () => openAddEditScreen('add'));
+// Update tag filter options
+function updateTagFilter(): void {
+  const tagSet = new Set(passwords.map(p => p.tag).filter(Boolean) as string[]);
+  const select = document.getElementById('vaultTagFilter') as HTMLSelectElement;
+  const currentValue = select.value;
+  
+  select.innerHTML = '<option value="">All tags</option>';
+  Array.from(tagSet).forEach(tag => {
+    const opt = document.createElement('option');
+    opt.value = tag;
+    opt.textContent = tag;
+    select.appendChild(opt);
+  });
+  
+  select.value = currentValue;
+}
 
 // ═══════════════════════════════════════════════════════
 // TABS
@@ -315,8 +420,73 @@ document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
 const genLen    = document.getElementById('genLen')    as HTMLInputElement;
 const genLenVal = document.getElementById('genLenVal') as HTMLElement;
 const genOutput = document.getElementById('genOutput') as HTMLInputElement;
+const genCheckIcon = document.getElementById('genCheckIcon') as HTMLElement;
+const genCheckBtn = document.getElementById('genCheckBtn') as HTMLButtonElement;
 
 genLen.addEventListener('input', () => { genLenVal.textContent = genLen.value; });
+
+// Live analysis on password output changes
+let liveAnalysisTimeout: number | undefined;
+async function liveCheckPassword() {
+  const pw = genOutput.value;
+  if (!pw) {
+    genCheckIcon.textContent = '—';
+    genCheckBtn.dataset.checkStatus = 'unchecked';
+    return;
+  }
+  
+  // Run live analysis without full UI update (only icon)
+  genCheckIcon.textContent = '...';
+  const pwnedCount = await checkPwned(pw);
+  
+  if (pwnedCount > 0) {
+    genCheckIcon.textContent = '✕';
+    genCheckIcon.style.color = 'var(--danger)';
+    genCheckIcon.style.fontSize = '18px';
+    genCheckBtn.dataset.checkStatus = 'failed';
+  } else {
+    // Quick entropy check
+    const hasUpper = /[A-Z]/.test(pw);
+    const hasLower = /[a-z]/.test(pw);
+    const hasDigit = /[0-9]/.test(pw);
+    const hasSym  = /[^A-Za-z0-9]/.test(pw);
+    let charset = 0;
+    if (hasUpper) charset += 26;
+    if (hasLower) charset += 26;
+    if (hasDigit) charset += 10;
+    if (hasSym)  charset += 32;
+    const bits = charset > 0 ? Math.log2(Math.max(1, charset)) * pw.length : 0;
+    
+    // Score calculation (same as analyzePassword)
+    let score = 0;
+    const e = Math.max(0, Math.min(80, bits));
+    score += Math.round((e / 80) * 40);
+    const classesCount = [hasUpper, hasLower, hasDigit, hasSym].filter(Boolean).length;
+    score += (classesCount - 1) * 5;
+    
+    if (score < 30) {
+      genCheckIcon.textContent = '✕';
+      genCheckIcon.style.color = 'var(--danger)';
+      genCheckIcon.style.fontSize = '20px';
+      genCheckBtn.dataset.checkStatus = 'failed';
+    } else if (score >= 50) {
+      genCheckIcon.textContent = '✓';
+      genCheckIcon.style.color = 'var(--accent2)';
+      genCheckIcon.style.fontSize = '20px';
+      genCheckBtn.dataset.checkStatus = 'passed';
+    } else {
+      genCheckIcon.textContent = '◐';
+      genCheckIcon.style.color = 'var(--warn)';
+      genCheckIcon.style.fontSize = '20px';
+      genCheckBtn.dataset.checkStatus = 'warning';
+    }
+  }
+}
+
+genOutput.addEventListener('input', () => {
+  clearTimeout(liveAnalysisTimeout);
+  liveAnalysisTimeout = window.setTimeout(liveCheckPassword, 300);
+});
 
 (['Upper','Lower','Nums','Syms'] as const).forEach(id => {
   const chk   = document.getElementById(`chk${id}`)   as HTMLInputElement;
@@ -341,6 +511,7 @@ document.getElementById('genBtn')!.addEventListener('click', () => {
   const arr = new Uint32Array(len);
   crypto.getRandomValues(arr);
   genOutput.value = Array.from(arr).map(n => charset[n % charset.length]).join('');
+  liveCheckPassword();
 });
 
 document.getElementById('genCopyBtn')!.addEventListener('click', () => {
@@ -353,15 +524,18 @@ document.getElementById('genCopyBtn')!.addEventListener('click', () => {
 });
 
 document.getElementById('genCheckBtn')!.addEventListener('click', () => {
-  const name = (document.getElementById('genName') as HTMLInputElement).value.trim();
-  openSecurityScreen(name || 'Generated', genOutput.value);
+  if (genOutput.value) {
+    openSecurityScreen('Generated', genOutput.value);
+  }
 });
 
-document.getElementById('genSaveBtn')!.addEventListener('click', () => {
-  // TODO: enviar al servidor
-  const btn = document.getElementById('genSaveBtn') as HTMLButtonElement;
-  btn.textContent = '✅ Saved!';
-  setTimeout(() => btn.textContent = '💾 Save password', 1500);
+document.getElementById('genCopyMainBtn')!.addEventListener('click', () => {
+  if (!genOutput.value) return;
+  navigator.clipboard.writeText(genOutput.value).then(() => {
+    const btn = document.getElementById('genCopyMainBtn') as HTMLButtonElement;
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy to clipboard', 1500);
+  });
 });
 
 // ═══════════════════════════════════════════════════════
@@ -544,3 +718,102 @@ async function analyzePassword(pw?: string): Promise<void> {
   }
   label!.textContent = score <10 ? "Insecure" : score < 30 ? 'weak password' : score < 60 ? 'Moderate password' : 'Strong password';
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// ADD/EDIT SCREEN HANDLERS
+// ═════════════════════════════════════════════════════════════════════
+
+const addEditLen = document.getElementById('addEditLen') as HTMLInputElement;
+const addEditLenVal = document.getElementById('addEditLenVal') as HTMLElement;
+const addEditPassword = document.getElementById('addEditPassword') as HTMLInputElement;
+const addEditEye = document.getElementById('addEditEye') as HTMLButtonElement;
+
+// Password visibility toggle
+addEditEye.addEventListener('click', () => {
+  addEditPassword.type = addEditPassword.type === 'password' ? 'text' : 'password';
+});
+
+// Length slider
+addEditLen.addEventListener('input', () => {
+  addEditLenVal.textContent = addEditLen.value;
+});
+
+// Live check for add/edit password field
+let addEditLiveTimeout: number | undefined;
+async function liveCheckAddEditPassword() {
+  const addEditCheckIcon = document.getElementById('addEditCheckIcon') as HTMLElement;
+  const pw = addEditPassword.value;
+  
+  if (!pw) {
+    addEditCheckIcon.textContent = '—';
+    return;
+  }
+  
+  addEditCheckIcon.textContent = '...';
+  const pwnedCount = await checkPwned(pw);
+  
+  if (pwnedCount > 0) {
+    addEditCheckIcon.textContent = '✕';
+    addEditCheckIcon.style.color = 'var(--danger)';
+  } else {
+    const hasUpper = /[A-Z]/.test(pw);
+    const hasLower = /[a-z]/.test(pw);
+    const hasDigit = /[0-9]/.test(pw);
+    const hasSym  = /[^A-Za-z0-9]/.test(pw);
+    let charset = 0;
+    if (hasUpper) charset += 26;
+    if (hasLower) charset += 26;
+    if (hasDigit) charset += 10;
+    if (hasSym)  charset += 32;
+    const bits = charset > 0 ? Math.log2(Math.max(1, charset)) * pw.length : 0;
+    
+    let score = 0;
+    const e = Math.max(0, Math.min(80, bits));
+    score += Math.round((e / 80) * 40);
+    const classesCount = [hasUpper, hasLower, hasDigit, hasSym].filter(Boolean).length;
+    score += (classesCount - 1) * 5;
+    
+    if (score < 30) {
+      addEditCheckIcon.textContent = '✕';
+      addEditCheckIcon.style.color = 'var(--danger)';
+    } else if (score >= 50) {
+      addEditCheckIcon.textContent = '✓';
+      addEditCheckIcon.style.color = 'var(--accent2)';
+    } else {
+      addEditCheckIcon.textContent = '◐';
+      addEditCheckIcon.style.color = 'var(--warn)';
+    }
+  }
+}
+
+addEditPassword.addEventListener('input', () => {
+  clearTimeout(addEditLiveTimeout);
+  addEditLiveTimeout = window.setTimeout(liveCheckAddEditPassword, 300);
+});
+
+// Character set checkboxes
+(['Upper','Lower','Nums','Syms'] as const).forEach(id => {
+  const chk = document.getElementById(`addEditChk${id}`) as HTMLInputElement;
+  const label = document.getElementById(`addEditLabel${id}`) as HTMLElement;
+  chk.addEventListener('change', () => label.classList.toggle('checked', chk.checked));
+});
+
+// Generate button in add/edit screen
+document.getElementById('addEditGenBtn')!.addEventListener('click', () => {
+  const len = parseInt(addEditLen.value);
+  const upper = (document.getElementById('addEditChkUpper') as HTMLInputElement).checked;
+  const lower = (document.getElementById('addEditChkLower') as HTMLInputElement).checked;
+  const nums = (document.getElementById('addEditChkNums') as HTMLInputElement).checked;
+  const syms = (document.getElementById('addEditChkSyms') as HTMLInputElement).checked;
+
+  let charset = '';
+  if (upper) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  if (lower) charset += 'abcdefghijklmnopqrstuvwxyz';
+  if (nums) charset += '0123456789';
+  if (syms) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+  if (!charset) return;
+
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  addEditPassword.value = Array.from(arr).map(n => charset[n % charset.length]).join('');
+});
