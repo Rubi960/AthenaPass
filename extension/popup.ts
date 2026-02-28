@@ -48,9 +48,20 @@ const EMAIL_STORAGE_KEY  = 'AthenaPass_email';
 let authToken: string | null = null;
 let savedUserEmail: string = '';  // decrypted email shown on lock screen
 
+// key used to encrypt/decrypt password entries; derived from username+master password
+let encryptionKey: CryptoKey | null = null;
+
+// generate a random identifier for a password entry
+function randomId(): string {
+  const arr = new Uint8Array(12);
+  crypto.getRandomValues(arr);
+  return bytesToHex(arr);
+}
+
 
 // ── Types ───────────────────────────────────────────────
 interface Password {
+  id: string;
   name: string;
   password: string;
   tag?: string;
@@ -229,6 +240,48 @@ async function deriveVerifier(username: string, password: string, saltHex: strin
   return v.toString(16);
 }
 
+// derive a CryptoKey for AES-GCM encryption from username/password/salt
+async function deriveMasterKey(username: string, password: string, saltHex: string): Promise<CryptoKey> {
+  const xHex = await derivePrivateKey(username, password, saltHex);
+  // convert xHex (SHA-1 output) to raw bytes
+  const raw = hexToBytes(xHex).buffer;
+  const baseKey = await crypto.subtle.importKey(
+    'raw', raw as ArrayBuffer,
+    { name: 'PBKDF2' }, false,
+    ['deriveKey']
+  );
+  // use a fixed additional salt so key derivation is deterministic
+  const derived = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: new TextEncoder().encode('AthenaPassEntrySalt'), iterations: 100_000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt','decrypt']
+  );
+  return derived;
+}
+
+
+// encrypt/decrypt helper for entry blobs
+async function encryptBlob(plaintext: string): Promise<string> {
+  if (!encryptionKey) throw new Error('no encryption key');
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder().encode(plaintext);
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, encryptionKey, enc);
+  const toB64 = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return `${toB64(iv.buffer)}:${toB64(cipher)}`;
+}
+
+async function decryptBlob(data: string): Promise<string> {
+  if (!encryptionKey) throw new Error('no encryption key');
+  const [ivB64, ctB64] = data.split(':');
+  const fromB64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const iv = fromB64(ivB64);
+  const ct = fromB64(ctB64);
+  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, encryptionKey, ct);
+  return new TextDecoder().decode(plainBuf);
+}
+
 async function registerUser(username: string, password: string) {
   const salt = randomSalt(4); // 4 bytes to mirror Python default
   const vkey = await deriveVerifier(username, password, salt);
@@ -240,8 +293,8 @@ async function registerUser(username: string, password: string) {
   return res.json();
 }
 
-// Perform SRP login flow and return bearer token
-async function authenticateUser(password: string): Promise<string> {
+// Perform SRP login flow and return bearer token and salt used for key derivation
+async function authenticateUser(password: string): Promise<{token: string; salt: string}> {
   console.log('Starting authentication for user:', savedUserEmail);
   if (!savedUserEmail) throw new Error('no username available');
   const username = savedUserEmail;
@@ -276,7 +329,8 @@ async function authenticateUser(password: string): Promise<string> {
   // verify server proof
   await verifySession(Ahex, clientSession, HAMK);
   if (!token) throw new Error('no token from server');
-  return token;
+  // return both token and the salt received earlier (startData.salt)
+  return { token, salt };
 }
 
 
@@ -375,6 +429,7 @@ initLockScreen();
 // ── Botón "change" email ─────────────────────────────
 document.getElementById('lockChangeUser')!.addEventListener('click', () => {
   authToken = null;
+  encryptionKey = null;
   savedUserEmail = '';
   clearEmail();
   (document.getElementById('setupEmail')    as HTMLInputElement).value = '';
@@ -408,8 +463,10 @@ document.getElementById('setupBtn')!.addEventListener('click', async () => {
   if (hint) hint.textContent = 'Authenticating…';
   
   try {
-    authToken = await authenticateUser(password);
-    console.log('Setup: Token obtained:', authToken);
+    const result = await authenticateUser(password);
+    authToken = result.token;
+    encryptionKey = await deriveMasterKey(savedUserEmail, password, result.salt);
+    console.log('Setup: Token obtained:', authToken, 'key derived');
     if (hint) hint.textContent = '';
     unlockApp();
   } catch (err) {
@@ -526,7 +583,9 @@ document.getElementById('lockBtn')!.addEventListener('click', async () => {
   }
   hint.textContent = 'Authenticating…';
   try {
-    authToken = await authenticateUser(pw);
+    const result = await authenticateUser(pw);
+    authToken = result.token;
+    encryptionKey = await deriveMasterKey(savedUserEmail, pw, result.salt);
     console.log('Token asignado:', authToken);
     hint.textContent = '';
     unlockApp();
@@ -635,23 +694,28 @@ document.getElementById('addEditSaveBtn')!.addEventListener('click', async () =>
   btn.disabled = true;
 
   try {
+    // build plaintext entry
+    const entry = { name, password: pw, tag: tag || undefined };
+    const encBlob = await encryptBlob(JSON.stringify(entry));
+
     if (currentEditIndex !== null) {
-      // Edit existing: get the original id from passwords array
-      const originalId = passwords[currentEditIndex].name;
-      const success = await updatePassword(originalId, pw);
+      // Edit existing: use stored id
+      const originalId = passwords[currentEditIndex].id;
+      const success = await updatePassword(originalId, encBlob);
       if (!success) {
         alert('Failed to update password on server');
         return;
       }
-      passwords[currentEditIndex] = { name, password: pw, tag: tag || undefined };
+      passwords[currentEditIndex] = { id: originalId, name, password: pw, tag: tag || undefined };
     } else {
       // Add new
-      const success = await addPassword(name, pw);
+      const newId = randomId();
+      const success = await addPassword(newId, encBlob);
       if (!success) {
         alert('Failed to add password to server');
         return;
       }
-      passwords.push({ name, password: pw, tag: tag || undefined });
+      passwords.push({ id: newId, name, password: pw, tag: tag || undefined });
     }
 
     showScreen(previousScreen);
@@ -686,16 +750,20 @@ async function loadPasswords(): Promise<void> {
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
-    // El servidor retorna un diccionario { id: encrypted_value, ... }
+    // El servidor retorna un diccionario { id: encrypted_blob, ... }
     const data = await res.json() as Record<string, string>;
-    
-    // Convertir a array de Password
-    // Por ahora, el id es el nombre (sin cifrado implementado aún)
-    passwords = Object.entries(data).map(([id, value]) => ({
-      name: id,
-      password: value,
-      tag: undefined
-    }));
+    console.log('Raw data from server:', data);
+    // Convertir a array de Password descifrando cada blob
+    passwords = [];
+    for (const [id, blob] of Object.entries(data)) {
+      try {
+        const plain = await decryptBlob(blob);
+        const obj = JSON.parse(plain);
+        passwords.push({ id, name: obj.name, password: obj.password, tag: obj.tag });
+      } catch (e) {
+        console.error('failed to decrypt entry', id, e);
+      }
+    }
     
     dot.classList.remove('loading');
     dot.style.background = '';
@@ -877,12 +945,12 @@ function renderPasswordList(list: Password[]): void {
   container.querySelectorAll<HTMLButtonElement>('.delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const idx = parseInt(btn.dataset.idx!);
-      const passwordName = passwords[idx].name;
-      if (!confirm(`Delete "${passwordName}"?`)) {
+      const entry = passwords[idx];
+      if (!confirm(`Delete "${entry.name}"?`)) {
         return;
       }
       btn.disabled = true;
-      const success = await deletePassword(passwordName);
+      const success = await deletePassword(entry.id);
       if (!success) {
         alert('Failed to delete password from server');
         btn.disabled = false;
