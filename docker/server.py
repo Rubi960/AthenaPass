@@ -127,6 +127,14 @@ def auth_start():
     })
 
 
+# global error handler to ensure we always return JSON rather than HTML stacktraces
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # log to stderr for debugging
+    app.logger.exception("Unhandled exception")
+    return jsonify({"error": "internal_server_error", "message": str(e)}), 500
+
+
 @app.post("/auth/finish")
 def auth_finish():
     # el cliente envía prueba M para completar el protocolo SRP
