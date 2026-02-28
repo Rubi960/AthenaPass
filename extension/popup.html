@@ -7,11 +7,16 @@
 </head>
 <body>
 
+<div id="appMessage" class="app-message" style="display:none"></div>
+
 <!-- ═══════════════════════════════════════════ -->
 <!-- SCREEN: LOCK                               -->
 <!-- ═══════════════════════════════════════════ -->
 <div class="screen active" id="screen-lock">
   <div class="lock-bg"></div>
+  <button class="lock-user-back" id="signupBackBtn" title="Login">
+    Login
+  </button>
   <button class="lock-create-btn" id="btnCreateUser" title="Create account">
     Create new user
   </button>
@@ -57,7 +62,6 @@
 
   <div class="lock-email-setup" id="lockFormSignup" style="display:none">
     <div class="lock-setup-title">
-      <button class="lock-user-change" id="signupBackBtn">back</button>
       Create account
     </div>
     <input class="lock-input" type="text" id="signupUser" placeholder="Username" />
@@ -192,7 +196,7 @@
           </div>
           <div class="settings-badge">HTTP</div>
         </div>
-        <div class="endpoint-display" id="endpointDisplay">http://localhost:3000/passwords</div>
+        <div class="endpoint-display" id="endpointDisplay">http://localhost:4134/passwords</div>
       </div>
 
       <div class="settings-section">
@@ -203,17 +207,10 @@
         </div>
         <div class="settings-row">
           <div>
-            <div class="settings-row-label">Auto-lock</div>
-            <div class="settings-row-sub">Coming soon</div>
-          </div>
-          <div class="settings-badge">—</div>
-        </div>
-        <div class="settings-row">
-          <div>
             <div class="settings-row-label">Encryption</div>
-            <div class="settings-row-sub">Coming soon</div>
+            <div class="settings-row-sub">AES-GCM</div>
           </div>
-          <div class="settings-badge">—</div>
+          <div class="settings-badge">AES-GCM</div>
         </div>
         <div class="settings-row">
           <div>

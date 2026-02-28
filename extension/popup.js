@@ -16,6 +16,15 @@ function applyStoredTheme() {
     if (theme === 'light')
         document.documentElement.classList.add('light-mode');
 }
+function updateStatusCount() {
+    const dot = document.getElementById('statusDot');
+    const statusT = document.getElementById('statusText');
+    if (!statusT || !dot)
+        return;
+    statusT.textContent = `${passwords.length} entries`;
+    dot.classList.remove('loading');
+    dot.style.background = passwords.length === 0 ? 'var(--danger)' : '';
+}
 function updateThemeButton() {
     const btn = document.getElementById('themeToggleBtn');
     if (!btn)
@@ -41,6 +50,22 @@ const EMAIL_STORAGE_KEY = 'AthenaPass_email';
 // authentication state (populated during login)
 let authToken = null;
 let savedUserEmail = ''; // decrypted email shown on lock screen
+// Inline app message helper
+function showAppMessage(msg, type = 'info', timeout = 3500) {
+    let el = document.getElementById('appMessage');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'appMessage';
+        el.className = 'app-message';
+        el.style.display = 'none';
+        document.body.prepend(el);
+    }
+    el.className = 'app-message ' + type;
+    el.textContent = msg;
+    el.style.display = 'flex';
+    if (timeout > 0)
+        setTimeout(() => { el.style.display = 'none'; }, timeout);
+}
 // key used to encrypt/decrypt password entries; derived from username+master password
 let encryptionKey = null;
 // generate a random identifier for a password entry
@@ -118,7 +143,13 @@ function generateEphemeral() {
     const a = BigInt('0x' + bytesToHex(bytes));
     const N = BigInt('0x' + SRP_N_HEX);
     const A = modPow(SRP_g, a, N);
-    return { secret: a.toString(16), public: A.toString(16) };
+    // make sure the hex strings are even-length (bytes.fromhex on the server
+    // chokes on odd-length input).  pad with a leading zero if needed.
+    const aHex = a.toString(16).padStart(2, '0');
+    let Ahex = A.toString(16);
+    if (Ahex.length % 2 === 1)
+        Ahex = '0' + Ahex;
+    return { secret: aHex, public: Ahex };
 }
 async function deriveSession(clientSecretHex, serverPubHex, saltHex, username, password) {
     const N = BigInt('0x' + SRP_N_HEX);
@@ -357,7 +388,7 @@ document.getElementById('setupBtn').addEventListener('click', async () => {
     }
     if (!password) {
         document.getElementById('setupPassword').focus();
-        alert('Please enter a password');
+        showAppMessage('Please enter a password', 'error', 2500);
         return;
     }
     // Save email
@@ -380,7 +411,7 @@ document.getElementById('setupBtn').addEventListener('click', async () => {
         console.error('Setup authentication failed:', err);
         if (hint)
             hint.textContent = 'Authentication failed';
-        alert('Login failed. Please check your credentials.');
+        showAppMessage('Login failed. Please check your credentials.', 'error', 3000);
     }
 });
 document.getElementById('setupPassword')
@@ -408,32 +439,52 @@ document.getElementById('signupSubmit').addEventListener('click', async () => {
     const pwc = document.getElementById('signupPasswordConfirm').value;
     if (!user) {
         document.getElementById('signupUser').focus();
+        showAppMessage('Please enter a username', 'error', 2500);
+        return;
+    }
+    if (!pw) {
+        signupErrorEl.textContent = 'Password required';
+        showAppMessage('Please enter a password', 'error', 2500);
+        document.getElementById('signupPassword').focus();
+        return;
+    }
+    if (pw.length < 8) {
+        signupErrorEl.textContent = 'Password too short (min 8)';
+        showAppMessage('Password too short (min 8 chars)', 'error', 2500);
+        document.getElementById('signupPassword').focus();
         return;
     }
     if (pw !== pwc) {
         signupErrorEl.textContent = 'Passwords do not match';
+        showAppMessage('Passwords do not match', 'error', 2500);
+        document.getElementById('signupPasswordConfirm').focus();
         return;
     }
-    // perform SRP-style registration
-    signupErrorEl.textContent = 'Registering...';
+    // perform SRP-style registration (show inline info instead of alert)
+    signupErrorEl.textContent = '';
+    showAppMessage('Registering…', 'info', 0);
     try {
         const result = await registerUser(user, pw);
+        showAppMessage('', 'info', 0);
         if (result && result.status === 'ok') {
-            alert('Account created successfully');
+            showAppMessage('Account created', 'success', 2000);
             lockFormSignup.style.display = 'none';
             lockFormSetupEl.style.display = 'flex';
         }
         else if (result && result.error) {
             signupErrorEl.textContent = result.error;
+            showAppMessage('Registration error', 'error', 3000);
         }
         else {
             signupErrorEl.textContent = 'Unexpected response from server';
             console.error('register response', result);
+            showAppMessage('Registration error', 'error', 3000);
         }
     }
     catch (err) {
         console.error('registration failed', err);
         signupErrorEl.textContent = 'Network error';
+        showAppMessage('Network error', 'error', 3000);
     }
 });
 // clear error as user types
@@ -442,6 +493,13 @@ document.getElementById('signupSubmit').addEventListener('click', async () => {
         signupErrorEl.textContent = '';
     });
 });
+const signupBackBtnEl = document.getElementById('signupBackBtn');
+if (signupBackBtnEl) {
+    signupBackBtnEl.addEventListener('click', () => {
+        lockFormSignup.style.display = 'none';
+        initLockScreen();
+    });
+}
 // back button on signup form
 document.getElementById('signupBackBtn').addEventListener('click', () => {
     lockFormSignup.style.display = 'none';
@@ -518,7 +576,7 @@ toggleEye('setupPassword', 'setupEye');
 // ─────────────────────────────────────────────────────
 async function unlockApp() {
     if (!authToken) {
-        alert('No auth token, cannot unlock app');
+        showAppMessage('No auth token, cannot unlock app', 'error', 2500);
         return;
     }
     showScreen('screen-main');
@@ -579,7 +637,7 @@ document.getElementById('addEditSaveBtn').addEventListener('click', async () => 
     const tag = document.getElementById('addEditTag').value.trim();
     const pw = document.getElementById('addEditPassword').value;
     if (!name || !pw) {
-        alert('Please fill in name and password');
+        showAppMessage('Please fill in name and password', 'error', 2500);
         return;
     }
     const btn = document.getElementById('addEditSaveBtn');
@@ -595,7 +653,7 @@ document.getElementById('addEditSaveBtn').addEventListener('click', async () => 
             const originalId = passwords[currentEditIndex].id;
             const success = await updatePassword(originalId, encBlob);
             if (!success) {
-                alert('Failed to update password on server');
+                showAppMessage('Failed to update password on server', 'error', 3000);
                 return;
             }
             passwords[currentEditIndex] = { id: originalId, name, password: pw, tag: tag || undefined };
@@ -605,7 +663,7 @@ document.getElementById('addEditSaveBtn').addEventListener('click', async () => 
             const newId = randomId();
             const success = await addPassword(newId, encBlob);
             if (!success) {
-                alert('Failed to add password to server');
+                showAppMessage('Failed to add password to server', 'error', 3000);
                 return;
             }
             passwords.push({ id: newId, name, password: pw, tag: tag || undefined });
@@ -613,6 +671,7 @@ document.getElementById('addEditSaveBtn').addEventListener('click', async () => 
         showScreen(previousScreen);
         renderPasswordList(passwords);
         updateTagFilter();
+        updateStatusCount();
     }
     finally {
         btn.textContent = originalText;
@@ -656,7 +715,7 @@ async function loadPasswords() {
         }
         dot.classList.remove('loading');
         dot.style.background = '';
-        statusT.textContent = `${passwords.length} entries`;
+        updateStatusCount();
     }
     catch (err) {
         console.error('loadPasswords error:', err);
@@ -666,6 +725,7 @@ async function loadPasswords() {
         passwords = [];
     }
     renderPasswordList(passwords);
+    updateStatusCount();
     updateTagFilter();
 }
 async function addPassword(id, encryptedValue) {
@@ -834,13 +894,14 @@ function renderPasswordList(list) {
             btn.disabled = true;
             const success = await deletePassword(entry.id);
             if (!success) {
-                alert('Failed to delete password from server');
+                showAppMessage('Failed to delete password from server', 'error', 3000);
                 btn.disabled = false;
                 return;
             }
             passwords.splice(idx, 1);
             renderPasswordList(passwords);
             updateTagFilter();
+            updateStatusCount();
         });
     });
 }
