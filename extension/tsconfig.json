@@ -1,9 +1,19 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["ES2017", "DOM"],
+    "lib": [
+      "ES2017",
+      "DOM"
+    ],
     "module": "none",
     "strict": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+    "outDir": "."
+  },
+  "include": [
+    "popup.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
