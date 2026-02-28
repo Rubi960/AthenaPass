@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  workflow_dispatch:   # botón manual para probar
+  push:
+    tags:
+      - 'v*.*.*'       # se dispara con: git tag v1.0.0 && git push origin v1.0.0
+
+jobs:
+  # ─────────────────────────────────────
+  # 1. Extensión de navegador
+  # ─────────────────────────────────────
+  build-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        working-directory: extension
+        run: npm install
+
+      - name: Compilar TypeScript
+        working-directory: extension
+        run: npx tsc
+
+      - name: Empaquetar extensión
+        run: |
+          cd extension
+          zip -r ../athenapass-extension-${{ github.ref_name }}.zip \
+            popup.js \
+            popup.html \
+            style.css \
+            manifest.json
+          # Si tienes iconos u otros assets, añádelos aquí
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: athenapass-extension-${{ github.ref_name }}.zip
+
+  # ─────────────────────────────────────
+  # 2. Desktop – Linux
+  # ─────────────────────────────────────
+  build-desktop-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sincronizar extension → desktop
+        run: node scripts/sync-desktop.js
+
+      - name: Compilar TypeScript en desktop
+        working-directory: desktop
+        run: npx tsc
+
+      - name: Instalar dependencias desktop
+        working-directory: desktop
+        run: npm install
+
+      - name: Build Linux (AppImage)
+        working-directory: desktop
+        run: npm run build:linux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: desktop/dist/*.AppImage
+
+  # ─────────────────────────────────────
+  # 3. Desktop – Windows
+  # ─────────────────────────────────────
+  build-desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sincronizar extension → desktop
+        run: node scripts/sync-desktop.js
+
+      - name: Compilar TypeScript en desktop
+        working-directory: desktop
+        run: npx tsc
+
+      - name: Instalar dependencias desktop
+        working-directory: desktop
+        run: npm install
+
+      - name: Build Windows (NSIS)
+        working-directory: desktop
+        run: npm run build:windows
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: desktop/dist/*.exe
+
+  # ─────────────────────────────────────
+  # 4. Crear la GitHub Release
+  # ─────────────────────────────────────
+  release:
+    needs: [build-extension, build-desktop-linux, build-desktop-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true   # genera notas desde los commits automáticamente

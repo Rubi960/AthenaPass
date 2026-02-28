@@ -40,7 +40,7 @@ updateThemeButton();
 // otherwise untrusted certificate the fetch() calls will still fail with
 // a NetworkError unless the certificate is explicitly trusted by the
 // browser (or you launch the browser with appropriate insecure flags).
-const SERVER_BASE        = 'http://localhost:4134';
+const SERVER_BASE        = 'http://127.0.0.1:4134';
 const API_ENDPOINT       = `${SERVER_BASE}/passwords`;
 const EMAIL_STORAGE_KEY  = 'AthenaPass_email';
 
@@ -177,8 +177,11 @@ async function deriveSession(
   const k = BigInt('0x' + kHex);
 
   // S = (B - k * g^x) ^ (a + u * x) mod N
+  // handle modular subtraction correctly
   const gx = modPow(g, x, N);
-  const base = (B - k * gx + N) % N;
+  let base = B - (k * gx) % N;
+  while (base < 0n) base += N;
+  base = base % N;
   const exp = a + u * x;
   const S = modPow(base, exp, N);
 
@@ -224,11 +227,13 @@ async function verifySession(
 
 // Private key derivation used both for verifier creation and login
 async function derivePrivateKey(username: string, password: string, saltHex: string): Promise<string> {
-  const sBuf = hexToBytes(saltHex).buffer;
+  // salt comes as hex string from server or from registration
+  const saltBuf = hexToBytes(saltHex);
   const userpass = new TextEncoder().encode(`${username}:${password}`);
   const inner = await srpSha1(userpass.buffer);
   // x = H(s || H(username:password))
-  const xHex = await srpSha1(sBuf, (hexToBytes(inner).buffer as ArrayBuffer));
+  const innerBuf = hexToBytes(inner);
+  const xHex = await srpSha1(saltBuf.buffer, innerBuf.buffer);
   return xHex;
 }
 
