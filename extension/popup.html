@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>AthenaPass</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SCREEN: LOCK                               -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="screen active" id="screen-lock">
+  <div class="lock-bg"></div>
+  <div class="lock-logo">
+    <!-- APP NAME — editar APP_NAME_PRIMARY / APP_NAME_ACCENT en popup.js -->
+    <span id="logoText"></span>
+  </div>
+  <div class="lock-sub">Password Manager</div>
+
+  <!-- Vista A: email ya guardado -->
+  <div class="lock-form" id="lockFormMain">
+    <div class="lock-user-row">
+      <span class="lock-user-icon">👤</span>
+      <span class="lock-user-email" id="lockUserEmail">—</span>
+      <button class="lock-user-change" id="lockChangeUser">change</button>
+    </div>
+    <div class="lock-input-wrap">
+      <input class="lock-input" type="password" id="lockPassword" placeholder="Master password" />
+      <button class="lock-eye" id="lockEye">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+    <button class="lock-btn" id="lockBtn">Unlock</button>
+    <div class="lock-hint"><!-- TODO: verificar contraseña aquí --></div>
+  </div>
+
+  <!-- Vista B: primera vez / cambiar email -->
+  <div class="lock-email-setup" id="lockFormSetup" style="display:none">
+    <div class="lock-setup-title">Enter your account</div>
+    <input class="lock-input" type="email" id="setupEmail" placeholder="Email / Username" />
+    <div class="lock-input-wrap">
+      <input class="lock-input" type="password" id="setupPassword" placeholder="Master password" />
+      <button class="lock-eye" id="setupEye">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+    <button class="lock-btn" id="setupBtn">Continue</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SCREEN: MAIN APP                           -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="screen" id="screen-main">
+  <div class="app-header">
+    <div class="app-title" id="appTitle"></div>
+    <div class="header-status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">synced</span>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="vault">
+      <span class="tab-icon">🔑</span> Vault
+    </button>
+    <button class="tab-btn" data-tab="generate">
+      <span class="tab-icon">⚡</span> Generate
+    </button>
+    <button class="tab-btn" data-tab="settings">
+      <span class="tab-icon">⚙️</span> Settings
+    </button>
+  </div>
+
+  <div class="tab-content">
+
+    <!-- ── TAB: VAULT ── -->
+    <div class="tab-panel active" id="tab-vault">
+      <input class="vault-search" type="text" id="vaultSearch" placeholder="Search passwords…" />
+      <div class="pw-list" id="pwList">
+        <div class="empty-state">
+          <div class="empty-icon">🔒</div>
+          <div>Loading passwords…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TAB: GENERATE ── -->
+    <div class="tab-panel" id="tab-generate">
+      <div class="gen-section">
+        <div class="gen-label">Name</div>
+        <input class="gen-input" type="text" id="genName" placeholder="e.g. GitHub, Netflix…" />
+      </div>
+
+      <div class="gen-section">
+        <div class="gen-label">Length — <span id="genLenVal">12</span> chars</div>
+        <div class="slider-row">
+          <input type="range" id="genLen" min="8" max="32" value="12" step="1" />
+        </div>
+      </div>
+
+      <div class="gen-section">
+        <div class="gen-label">Character set</div>
+        <div class="checks">
+          <label class="check-item checked" id="labelUpper">
+            <input type="checkbox" id="chkUpper" checked />
+            <span class="tab-icon">A</span>
+            <span class="check-label-text">Upper</span>
+          </label>
+          <label class="check-item checked" id="labelLower">
+            <input type="checkbox" id="chkLower" checked />
+            <span class="tab-icon">a</span>
+            <span class="check-label-text">Lower</span>
+          </label>
+          <label class="check-item checked" id="labelNums">
+            <input type="checkbox" id="chkNums" checked />
+            <span class="tab-icon">0</span>
+            <span class="check-label-text">Nums</span>
+          </label>
+          <label class="check-item" id="labelSyms">
+            <input type="checkbox" id="chkSyms" />
+            <span class="tab-icon">#</span>
+            <span class="check-label-text">Syms</span>
+          </label>
+        </div>
+      </div>
+
+      <button class="gen-btn" id="genBtn">⚡ Generate</button>
+
+      <div class="gen-section">
+        <div class="gen-label">Result</div>
+        <div class="gen-output-wrap">
+          <input class="gen-output" type="text" id="genOutput" placeholder="Generated password will appear here…" />
+          <!-- Copy button -->
+          <button class="gen-icon-btn gen-copy-btn" id="genCopyBtn" title="Copy password">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+          <!-- Security check button -->
+          <button class="gen-icon-btn gen-check-btn" id="genCheckBtn" title="Check security">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </button>
+        </div>
+        <button class="save-btn" id="genSaveBtn">💾 Save password</button>
+      </div>
+    </div>
+
+    <!-- ── TAB: SETTINGS ── -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="settings-section">
+        <div class="settings-title">Connection</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">API Endpoint</div>
+            <div class="settings-row-sub">Password source server</div>
+          </div>
+          <div class="settings-badge">HTTP</div>
+        </div>
+        <div class="endpoint-display" id="endpointDisplay">http://localhost:3000/passwords</div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-title">Application</div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Version</div></div>
+          <div class="settings-badge">1.0.0</div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Auto-lock</div>
+            <div class="settings-row-sub">Coming soon</div>
+          </div>
+          <div class="settings-badge">—</div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Encryption</div>
+            <div class="settings-row-sub">Coming soon</div>
+          </div>
+          <div class="settings-badge">—</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SCREEN: SECURITY CHECK                     -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="screen" id="screen-security">
+  <div class="security-header">
+    <button class="back-btn" id="backBtn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Back
+    </button>
+    <div class="security-title">Security Check</div>
+  </div>
+  <div class="security-body">
+    <div class="security-shield">🛡️</div>
+    <div class="security-label">Segura</div>
+    <div class="security-pw-name" id="securityPwName">—</div>
+    <div class="security-sub">
+      <!-- TODO: aquí irá el análisis real de la contraseña -->
+    </div>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

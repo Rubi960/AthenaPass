@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "AthenaPass",
+  "version": "1.0.0",
+  "description": "Password manager extension",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "AthenaPass@dev.local"
+    }
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AthenaPass"
+  }
+}
