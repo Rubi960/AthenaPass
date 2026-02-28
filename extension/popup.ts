@@ -13,6 +13,28 @@ const APP_NAME_HTML = `${APP_NAME_PRIMARY}<span class="app-accent">${APP_NAME_AC
 (document.getElementById('appTitle') as HTMLElement).innerHTML = APP_NAME_HTML;
 
 // ── Config ──────────────────────────────────────────────
+
+// theme helper
+function applyStoredTheme() {
+  const theme = localStorage.getItem('theme');
+  if (theme === 'light') document.documentElement.classList.add('light-mode');
+}
+function updateThemeButton() {
+  const btn = document.getElementById('themeToggleBtn') as HTMLButtonElement;
+  if (!btn) return;
+  btn.textContent = document.documentElement.classList.contains('light-mode') ? 'Light' : 'Dark';
+}
+
+function toggleTheme() {
+  const isLight = document.documentElement.classList.toggle('light-mode');
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+  updateThemeButton();
+}
+
+// apply stored value on load
+applyStoredTheme();
+updateThemeButton();
+
 const API_ENDPOINT      = 'http://localhost:3000/passwords';
 const EMAIL_STORAGE_KEY = 'AthenaPass_email';
 
@@ -137,6 +159,82 @@ document.getElementById('setupBtn')!.addEventListener('click', async () => {
     if (e.key === 'Enter') (document.getElementById('setupBtn') as HTMLButtonElement).click();
   });
 
+// ── Create account / signup screen ─────────────────────
+const btnCreate = document.getElementById('btnCreateUser') as HTMLButtonElement;
+const lockFormMain = document.getElementById('lockFormMain') as HTMLElement;
+const lockFormSetupEl = document.getElementById('lockFormSetup') as HTMLElement;
+const lockFormSignup = document.getElementById('lockFormSignup') as HTMLElement;
+
+btnCreate.addEventListener('click', () => {
+  // show signup form
+  lockFormMain.style.display = 'none';
+  lockFormSetupEl.style.display = 'none';
+  lockFormSignup.style.display = 'flex';
+});
+
+// signup submit logic
+const signupErrorEl = document.getElementById('signupError') as HTMLElement;
+document.getElementById('signupSubmit')!.addEventListener('click', () => {
+  signupErrorEl.textContent = '';
+  const user = (document.getElementById('signupUser') as HTMLInputElement).value.trim();
+  const pw   = (document.getElementById('signupPassword') as HTMLInputElement).value;
+  const pwc  = (document.getElementById('signupPasswordConfirm') as HTMLInputElement).value;
+  if (!user) { (document.getElementById('signupUser') as HTMLInputElement).focus(); return; }
+  if (pw !== pwc) {
+    signupErrorEl.textContent = 'Passwords do not match';
+    return;
+  }
+  // TODO: send to server/create account
+  alert('Account created (stub)');
+  lockFormSignup.style.display = 'none';
+  lockFormSetupEl.style.display = 'flex';
+});
+// clear error as user types
+['signupPassword','signupPasswordConfirm'].forEach(id => {
+  (document.getElementById(id) as HTMLInputElement).addEventListener('input', () => {
+    signupErrorEl.textContent = '';
+  });
+});
+
+// back button on signup form
+(document.getElementById('signupBackBtn') as HTMLButtonElement).addEventListener('click', () => {
+  lockFormSignup.style.display = 'none';
+  initLockScreen();
+});
+
+// eye toggles for signup fields
+(document.getElementById('signupEye') as HTMLButtonElement).addEventListener('click', () => {
+  const inp = document.getElementById('signupPassword') as HTMLInputElement;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+});
+(document.getElementById('signupEyeConfirm') as HTMLButtonElement).addEventListener('click', () => {
+  const inp = document.getElementById('signupPasswordConfirm') as HTMLInputElement;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+});
+
+// theme toggle listener (settings tab may not exist until loaded but we attach here)
+const themeBtn = document.getElementById('themeToggleBtn');
+if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+
+// logout button
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', () => {
+    window.close();
+  });
+}
+
+// add/edit security check button
+const addEditCheckBtn = document.getElementById('addEditCheckBtn');
+if (addEditCheckBtn) {
+  addEditCheckBtn.addEventListener('click', () => {
+    if (addEditPassword.value) {
+      openSecurityScreen('Password', addEditPassword.value);
+    }
+  });
+}
+
+
 // ── Unlock normal ─────────────────────────────────────
 document.getElementById('lockBtn')!.addEventListener('click', () => {
   // TODO: verificar contraseña con (document.getElementById('lockPassword') as HTMLInputElement).value
@@ -147,11 +245,7 @@ document.getElementById('lockBtn')!.addEventListener('click', () => {
     if (e.key === 'Enter') (document.getElementById('lockBtn') as HTMLButtonElement).click();
   });
 
-// ── Botón crear usuario (top-right, sin funcionalidad aún) ──
-document.getElementById('btnCreateUser')!.addEventListener('click', () => {
-  // TODO: implementar creación de usuario
-  console.log('Create user clicked');
-});
+
 
 // ── Toggle eye ────────────────────────────────────────
 function toggleEye(inputId: string, btnId: string): void {
@@ -179,7 +273,9 @@ function showScreen(id: string): void {
 }
 
 async function openSecurityScreen(pwName: string, pwValue?: string): Promise<void> {
-  previousScreen = 'screen-main';
+  // remember current active screen so back behaves correctly
+  const active = document.querySelector('.screen.active');
+  previousScreen = active ? active.id : 'screen-main';
   (document.getElementById('securityPwName') as HTMLElement).textContent = pwName || '—';
   showScreen('screen-security');
   await analyzePassword(pwValue);
@@ -208,7 +304,14 @@ function openAddEditScreen(mode: 'add' | 'edit', idx?: number): void {
   
   // Reset password field to hidden
   pwInput.type = 'password';
-  
+  // clear live check icon
+  const icon = document.getElementById('addEditCheckIcon');
+  if (icon) icon.textContent = '—';
+  // if editing existing and password present, run quick live check
+  if (pwInput.value) {
+    liveCheckAddEditPassword();
+  }
+
   showScreen('screen-addedit');
 }
 
@@ -514,6 +617,7 @@ document.getElementById('genBtn')!.addEventListener('click', () => {
   liveCheckPassword();
 });
 
+
 document.getElementById('genCopyBtn')!.addEventListener('click', () => {
   if (!genOutput.value) return;
   navigator.clipboard.writeText(genOutput.value).then(() => {
@@ -816,4 +920,6 @@ document.getElementById('addEditGenBtn')!.addEventListener('click', () => {
   const arr = new Uint32Array(len);
   crypto.getRandomValues(arr);
   addEditPassword.value = Array.from(arr).map(n => charset[n % charset.length]).join('');
+  // trigger live check immediately after generation
+  liveCheckAddEditPassword();
 });

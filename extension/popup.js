@@ -10,6 +10,26 @@ const APP_NAME_HTML = `${APP_NAME_PRIMARY}<span class="app-accent">${APP_NAME_AC
 document.getElementById('logoText').innerHTML = APP_NAME_HTML;
 document.getElementById('appTitle').innerHTML = APP_NAME_HTML;
 // ── Config ──────────────────────────────────────────────
+// theme helper
+function applyStoredTheme() {
+    const theme = localStorage.getItem('theme');
+    if (theme === 'light')
+        document.documentElement.classList.add('light-mode');
+}
+function updateThemeButton() {
+    const btn = document.getElementById('themeToggleBtn');
+    if (!btn)
+        return;
+    btn.textContent = document.documentElement.classList.contains('light-mode') ? 'Light' : 'Dark';
+}
+function toggleTheme() {
+    const isLight = document.documentElement.classList.toggle('light-mode');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    updateThemeButton();
+}
+// apply stored value on load
+applyStoredTheme();
+updateThemeButton();
 const API_ENDPOINT = 'http://localhost:3000/passwords';
 const EMAIL_STORAGE_KEY = 'AthenaPass_email';
 // ── State ───────────────────────────────────────────────
@@ -108,6 +128,77 @@ document.getElementById('setupPassword')
     if (e.key === 'Enter')
         document.getElementById('setupBtn').click();
 });
+// ── Create account / signup screen ─────────────────────
+const btnCreate = document.getElementById('btnCreateUser');
+const lockFormMain = document.getElementById('lockFormMain');
+const lockFormSetupEl = document.getElementById('lockFormSetup');
+const lockFormSignup = document.getElementById('lockFormSignup');
+btnCreate.addEventListener('click', () => {
+    // show signup form
+    lockFormMain.style.display = 'none';
+    lockFormSetupEl.style.display = 'none';
+    lockFormSignup.style.display = 'flex';
+});
+// signup submit logic
+const signupErrorEl = document.getElementById('signupError');
+document.getElementById('signupSubmit').addEventListener('click', () => {
+    signupErrorEl.textContent = '';
+    const user = document.getElementById('signupUser').value.trim();
+    const pw = document.getElementById('signupPassword').value;
+    const pwc = document.getElementById('signupPasswordConfirm').value;
+    if (!user) {
+        document.getElementById('signupUser').focus();
+        return;
+    }
+    if (pw !== pwc) {
+        signupErrorEl.textContent = 'Passwords do not match';
+        return;
+    }
+    // TODO: send to server/create account
+    alert('Account created (stub)');
+    lockFormSignup.style.display = 'none';
+    lockFormSetupEl.style.display = 'flex';
+});
+// clear error as user types
+['signupPassword', 'signupPasswordConfirm'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+        signupErrorEl.textContent = '';
+    });
+});
+// back button on signup form
+document.getElementById('signupBackBtn').addEventListener('click', () => {
+    lockFormSignup.style.display = 'none';
+    initLockScreen();
+});
+// eye toggles for signup fields
+document.getElementById('signupEye').addEventListener('click', () => {
+    const inp = document.getElementById('signupPassword');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+});
+document.getElementById('signupEyeConfirm').addEventListener('click', () => {
+    const inp = document.getElementById('signupPasswordConfirm');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+});
+// theme toggle listener (settings tab may not exist until loaded but we attach here)
+const themeBtn = document.getElementById('themeToggleBtn');
+if (themeBtn)
+    themeBtn.addEventListener('click', toggleTheme);
+// logout button
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+        window.close();
+    });
+}
+// add/edit security check button
+const addEditCheckBtn = document.getElementById('addEditCheckBtn');
+if (addEditCheckBtn) {
+    addEditCheckBtn.addEventListener('click', () => {
+        if (addEditPassword.value) {
+            openSecurityScreen('Password', addEditPassword.value);
+        }
+    });
+}
 // ── Unlock normal ─────────────────────────────────────
 document.getElementById('lockBtn').addEventListener('click', () => {
     // TODO: verificar contraseña con (document.getElementById('lockPassword') as HTMLInputElement).value
@@ -117,11 +208,6 @@ document.getElementById('lockPassword')
     .addEventListener('keydown', (e) => {
     if (e.key === 'Enter')
         document.getElementById('lockBtn').click();
-});
-// ── Botón crear usuario (top-right, sin funcionalidad aún) ──
-document.getElementById('btnCreateUser').addEventListener('click', () => {
-    // TODO: implementar creación de usuario
-    console.log('Create user clicked');
 });
 // ── Toggle eye ────────────────────────────────────────
 function toggleEye(inputId, btnId) {
@@ -147,7 +233,9 @@ function showScreen(id) {
     (_a = document.getElementById(id)) === null || _a === void 0 ? void 0 : _a.classList.add('active');
 }
 async function openSecurityScreen(pwName, pwValue) {
-    previousScreen = 'screen-main';
+    // remember current active screen so back behaves correctly
+    const active = document.querySelector('.screen.active');
+    previousScreen = active ? active.id : 'screen-main';
     document.getElementById('securityPwName').textContent = pwName || '—';
     showScreen('screen-security');
     await analyzePassword(pwValue);
@@ -174,6 +262,14 @@ function openAddEditScreen(mode, idx) {
     }
     // Reset password field to hidden
     pwInput.type = 'password';
+    // clear live check icon
+    const icon = document.getElementById('addEditCheckIcon');
+    if (icon)
+        icon.textContent = '—';
+    // if editing existing and password present, run quick live check
+    if (pwInput.value) {
+        liveCheckAddEditPassword();
+    }
     showScreen('screen-addedit');
 }
 document.getElementById('backBtn').addEventListener('click', () => showScreen(previousScreen));
@@ -762,4 +858,6 @@ document.getElementById('addEditGenBtn').addEventListener('click', () => {
     const arr = new Uint32Array(len);
     crypto.getRandomValues(arr);
     addEditPassword.value = Array.from(arr).map(n => charset[n % charset.length]).join('');
+    // trigger live check immediately after generation
+    liveCheckAddEditPassword();
 });

@@ -24,6 +24,16 @@
   --radius:   8px;
 }
 
+/* light mode overrides */
+.light-mode {
+  --bg: #fff;
+  --surface: #fff;
+  --surface2: #ffeef0;
+  --border: #ccc;
+  --text: #000;
+  --text2: #555;
+} 
+
 /* ── Reset ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -137,6 +147,25 @@ html, body {
   padding: 2px; display: flex; align-items: center;
 }
 .lock-eye:hover { color: var(--text); }
+
+.lock-create-btn {
+  position: absolute; top: 10px; right: 10px;
+  background: none; border: none; color: var(--text2);
+  cursor: pointer; padding: 4px; display: flex; align-items: center;
+}
+.lock-create-btn:hover { color: var(--text); }
+
+.signup-error {
+  color: var(--danger);
+  font-size: 11px;
+  margin: 4px 0 8px 0;
+}
+
+/* back button in signup uses same class as user-change, but reduce margin */
+.lock-user-change#signupBackBtn {
+  margin-bottom: 6px;
+}
+
 
 .lock-btn {
   padding: 10px;
@@ -578,14 +607,17 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 .addedit-input-wrap { position: relative; }
 
 .addedit-eye {
-  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  position: absolute; right: 34px; top: 50%; transform: translateY(-50%);
   background: none; border: none; color: var(--text2); cursor: pointer;
   padding: 2px; display: flex; align-items: center;
 }
 .addedit-eye:hover { color: var(--text); }
 
+/* ensure check button inside add/edit has same spacing as gen-check */
+.addedit-check-btn { right: 6px; }
+
 .addedit-check-icon {
-  position: absolute; right: 40px; top: 50%; transform: translateY(-50%);
+  /* kept for backwards compatibility but button now wraps this */
   color: var(--text2); font-size: 16px; font-weight: 600;
   min-width: 18px; text-align: center;
 }

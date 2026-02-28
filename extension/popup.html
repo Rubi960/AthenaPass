@@ -58,6 +58,32 @@
     </div>
     <button class="lock-btn" id="setupBtn">Continue</button>
   </div>
+
+  <div class="lock-email-setup" id="lockFormSignup" style="display:none">
+    <div class="lock-setup-title">
+      <button class="lock-user-change" id="signupBackBtn">back</button>
+      Create account
+    </div>
+    <input class="lock-input" type="text" id="signupUser" placeholder="Username" />
+    <div class="lock-input-wrap">
+      <input class="lock-input" type="password" id="signupPassword" placeholder="Password" />
+      <button class="lock-eye" id="signupEye">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+    <div class="lock-input-wrap">
+      <input class="lock-input" type="password" id="signupPasswordConfirm" placeholder="Confirm password" />
+      <button class="lock-eye" id="signupEyeConfirm">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+    <div id="signupError" class="signup-error"></div>
+    <button class="lock-btn" id="signupSubmit">Submit</button>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
@@ -193,6 +219,17 @@
           </div>
           <div class="settings-badge">—</div>
         </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Theme</div>
+            <div class="settings-row-sub">Light / Dark mode</div>
+          </div>
+          <button class="settings-badge" id="themeToggleBtn">Dark</button>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Logout</div>
+          <button class="settings-badge" id="logoutBtn">Exit</button>
+        </div>
       </div>
     </div>
 
@@ -248,7 +285,9 @@
       <div class="addedit-label">Password</div>
       <div class="addedit-input-wrap">
         <input class="addedit-input" type="password" id="addEditPassword" placeholder="Enter password" />
-        <span class="addedit-check-icon" id="addEditCheckIcon">—</span>
+        <button class="gen-icon-btn gen-check-btn addedit-check-btn" id="addEditCheckBtn" title="Check security" data-check-status="unchecked">
+          <span id="addEditCheckIcon">—</span>
+        </button>
         <button class="addedit-eye" id="addEditEye">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
