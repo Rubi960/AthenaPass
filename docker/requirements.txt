@@ -2,3 +2,4 @@ flask
 srp
 requests
 pyOpenSSL
+flask-cors

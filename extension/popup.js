@@ -30,8 +30,194 @@ function toggleTheme() {
 // apply stored value on load
 applyStoredTheme();
 updateThemeButton();
-const API_ENDPOINT = 'http://localhost:3000/passwords';
+// server running in Docker on port 4134
+// NOTE: the backend is served over HTTPS. If you use a self‑signed or
+// otherwise untrusted certificate the fetch() calls will still fail with
+// a NetworkError unless the certificate is explicitly trusted by the
+// browser (or you launch the browser with appropriate insecure flags).
+const SERVER_BASE = 'http://localhost:4134';
+const API_ENDPOINT = `${SERVER_BASE}/passwords`;
 const EMAIL_STORAGE_KEY = 'AthenaPass_email';
+// authentication state (populated during login)
+let authToken = null;
+let savedUserEmail = ''; // decrypted email shown on lock screen
+// ── SRP helpers (simplified; matches Python `srp` defaults) ──
+// prime and generator taken from NG_2048, SHA-1 hashing
+const SRP_N_HEX = `AC6BDB41324A9A9BF166DE5E1389582FAF72B6651987EE07FC3192943DB56050A37329CBB4
+A099ED8193E0757767A13DD52312AB4B03310DCD7F48A9DA04FD50E8083969EDB767B0CF60
+95179A163AB3661A05FBD5FAAAE82918A9962F0B93B855F97993EC975EEAA80D740ADBF4FF
+747359D041D5C33EA71D281E446B14773BCA97B43A23FB801676BD207A436C6481F1D2B907
+8717461A5B9D32E688F87748544523B524B0D57D5EA77A2775D2ECFA032CFBDBF52FB37861
+60279004E57AE6AF874E7303CE53299CCC041C7BC308D82A5698F3A8D0C38271AE35F8E9DB
+FBB694B5C803D89F7AE435DE236D525F54759B65E372FCD68EF20FA7111F9E4AFF73`.replace(/\s+/g, '');
+const SRP_g = 2n;
+function hexToBytes(hex) {
+    if (hex.length % 2)
+        hex = '0' + hex;
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return bytes;
+}
+function bytesToHex(buf) {
+    const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function concatBuffers(...bufs) {
+    const total = bufs.reduce((sum, b) => sum + b.byteLength, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    bufs.forEach(b => {
+        out.set(new Uint8Array(b), offset);
+        offset += b.byteLength;
+    });
+    return out.buffer;
+}
+async function srpSha1(...data) {
+    // normalize to ArrayBuffer
+    const buffers = data.map(d => {
+        if (d instanceof ArrayBuffer)
+            return d;
+        // Uint8Array, SharedArrayBuffer, etc.
+        return d;
+    });
+    const buf = concatBuffers(...buffers);
+    const hash = await crypto.subtle.digest('SHA-1', buf);
+    return bytesToHex(hash);
+}
+function modPow(base, exp, mod) {
+    let result = 1n;
+    base = base % mod;
+    while (exp > 0n) {
+        if ((exp & 1n) === 1n)
+            result = (result * base) % mod;
+        exp = exp >> 1n;
+        base = (base * base) % mod;
+    }
+    return result;
+}
+function randomSalt(length = 4) {
+    const arr = new Uint8Array(length);
+    crypto.getRandomValues(arr);
+    return bytesToHex(arr);
+}
+// ── SRP session helpers ─────────────────────────────────
+function generateEphemeral() {
+    // create a random 20‑byte secret ('a') and compute A = g^a mod N
+    const bytes = new Uint8Array(20);
+    crypto.getRandomValues(bytes);
+    const a = BigInt('0x' + bytesToHex(bytes));
+    const N = BigInt('0x' + SRP_N_HEX);
+    const A = modPow(SRP_g, a, N);
+    return { secret: a.toString(16), public: A.toString(16) };
+}
+async function deriveSession(clientSecretHex, serverPubHex, saltHex, username, password) {
+    const N = BigInt('0x' + SRP_N_HEX);
+    const g = SRP_g;
+    const a = BigInt('0x' + clientSecretHex);
+    const B = BigInt('0x' + serverPubHex);
+    const xHex = await derivePrivateKey(username, password, saltHex);
+    const x = BigInt('0x' + xHex);
+    // verify B is not 0 mod N
+    if (B % N === 0n) {
+        throw new Error('Invalid server ephemeral');
+    }
+    // compute u = H(A, B)
+    const A = modPow(g, a, N);
+    const uHex = await srpSha1(hexToBytes(A.toString(16)).buffer, hexToBytes(B.toString(16)).buffer);
+    const u = BigInt('0x' + uHex);
+    // k = H(N, g)
+    const kHex = await srpSha1(hexToBytes(SRP_N_HEX).buffer, hexToBytes(g.toString(16)).buffer);
+    const k = BigInt('0x' + kHex);
+    // S = (B - k * g^x) ^ (a + u * x) mod N
+    const gx = modPow(g, x, N);
+    const base = (B - k * gx + N) % N;
+    const exp = a + u * x;
+    const S = modPow(base, exp, N);
+    const Khex = await srpSha1(hexToBytes(S.toString(16)).buffer);
+    // compute M = H(H(N) xor H(g), H(username), salt, A, B, K)
+    const hNhex = await srpSha1(hexToBytes(SRP_N_HEX).buffer);
+    const hghex = await srpSha1(hexToBytes(g.toString(16)).buffer);
+    const hNbytes = hexToBytes(hNhex);
+    const hgbytes = hexToBytes(hghex);
+    const hNxorg = new Uint8Array(hNbytes.length);
+    for (let i = 0; i < hNxorg.length; i++) {
+        hNxorg[i] = hNbytes[i] ^ hgbytes[i];
+    }
+    const hUhex = await srpSha1(new TextEncoder().encode(username).buffer);
+    const Mhex = await srpSha1(hNxorg.buffer, hexToBytes(hUhex).buffer, hexToBytes(saltHex).buffer, hexToBytes(A.toString(16)).buffer, hexToBytes(B.toString(16)).buffer, hexToBytes(Khex).buffer);
+    return { key: Khex, proof: Mhex };
+}
+async function verifySession(clientPubHex, clientSession, serverProofHex) {
+    const expected = await srpSha1(hexToBytes(clientPubHex).buffer, hexToBytes(clientSession.proof).buffer, hexToBytes(clientSession.key).buffer);
+    if (expected !== serverProofHex) {
+        throw new Error('Server provided session proof is invalid');
+    }
+}
+// Private key derivation used both for verifier creation and login
+async function derivePrivateKey(username, password, saltHex) {
+    const sBuf = hexToBytes(saltHex).buffer;
+    const userpass = new TextEncoder().encode(`${username}:${password}`);
+    const inner = await srpSha1(userpass.buffer);
+    // x = H(s || H(username:password))
+    const xHex = await srpSha1(sBuf, hexToBytes(inner).buffer);
+    return xHex;
+}
+async function deriveVerifier(username, password, saltHex) {
+    const xHex = await derivePrivateKey(username, password, saltHex);
+    const x = BigInt('0x' + xHex);
+    const N = BigInt('0x' + SRP_N_HEX);
+    const v = modPow(SRP_g, x, N);
+    return v.toString(16);
+}
+async function registerUser(username, password) {
+    const salt = randomSalt(4); // 4 bytes to mirror Python default
+    const vkey = await deriveVerifier(username, password, salt);
+    const res = await fetch(`${SERVER_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, salt, vkey })
+    });
+    return res.json();
+}
+// Perform SRP login flow and return bearer token
+async function authenticateUser(password) {
+    console.log('Starting authentication for user:', savedUserEmail);
+    if (!savedUserEmail)
+        throw new Error('no username available');
+    const username = savedUserEmail;
+    // step 1: generate client ephemeral and send A to server
+    const { secret: aHex, public: Ahex } = generateEphemeral();
+    const startRes = await fetch(`${SERVER_BASE}/auth/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, A: Ahex })
+    });
+    const startData = await startRes.json();
+    const salt = startData.salt;
+    const B = startData.B;
+    console.log('Authentication start response:', startData);
+    // derive session proof
+    const clientSession = await deriveSession(aHex, B, salt, username, password);
+    const proof = clientSession.proof;
+    // send proof and receive HAMK + token
+    const finishRes = await fetch(`${SERVER_BASE}/auth/finish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, M: proof })
+    });
+    console.log('Derived client session proof:', proof);
+    const finishData = await finishRes.json();
+    console.log('Authentication response:', finishData);
+    const HAMK = finishData.HAMK;
+    const token = finishData.token;
+    // verify server proof
+    await verifySession(Ahex, clientSession, HAMK);
+    if (!token)
+        throw new Error('no token from server');
+    return token;
+}
 // ── State ───────────────────────────────────────────────
 let passwords = [];
 let previousScreen = 'screen-main';
@@ -70,7 +256,7 @@ async function decryptEmail(stored) {
         const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(ivB64) }, key, fromB64(ctB64));
         return new TextDecoder().decode(plain);
     }
-    catch (_a) {
+    catch {
         return '';
     }
 }
@@ -92,6 +278,7 @@ function clearEmail() {
 // ═══════════════════════════════════════════════════════
 async function initLockScreen() {
     const saved = await getSavedEmail();
+    savedUserEmail = saved;
     if (saved) {
         document.getElementById('lockUserEmail').textContent = saved;
         document.getElementById('lockFormMain').style.display = 'flex';
@@ -105,6 +292,8 @@ async function initLockScreen() {
 initLockScreen();
 // ── Botón "change" email ─────────────────────────────
 document.getElementById('lockChangeUser').addEventListener('click', () => {
+    authToken = null;
+    savedUserEmail = '';
     clearEmail();
     document.getElementById('setupEmail').value = '';
     document.getElementById('setupPassword').value = '';
@@ -115,13 +304,36 @@ document.getElementById('lockChangeUser').addEventListener('click', () => {
 // ── Setup: primera vez ────────────────────────────────
 document.getElementById('setupBtn').addEventListener('click', async () => {
     const email = document.getElementById('setupEmail').value.trim();
+    const password = document.getElementById('setupPassword').value;
     if (!email) {
         document.getElementById('setupEmail').focus();
         return;
     }
+    if (!password) {
+        document.getElementById('setupPassword').focus();
+        alert('Please enter a password');
+        return;
+    }
+    // Save email
     await saveEmail(email);
-    // TODO: verificar contraseña con (document.getElementById('setupPassword') as HTMLInputElement).value
-    unlockApp();
+    savedUserEmail = email;
+    // Now authenticate with SRP to get token
+    const hint = document.querySelector('.lock-hint');
+    if (hint)
+        hint.textContent = 'Authenticating…';
+    try {
+        authToken = await authenticateUser(password);
+        console.log('Setup: Token obtained:', authToken);
+        if (hint)
+            hint.textContent = '';
+        unlockApp();
+    }
+    catch (err) {
+        console.error('Setup authentication failed:', err);
+        if (hint)
+            hint.textContent = 'Authentication failed';
+        alert('Login failed. Please check your credentials.');
+    }
 });
 document.getElementById('setupPassword')
     .addEventListener('keydown', (e) => {
@@ -141,7 +353,7 @@ btnCreate.addEventListener('click', () => {
 });
 // signup submit logic
 const signupErrorEl = document.getElementById('signupError');
-document.getElementById('signupSubmit').addEventListener('click', () => {
+document.getElementById('signupSubmit').addEventListener('click', async () => {
     signupErrorEl.textContent = '';
     const user = document.getElementById('signupUser').value.trim();
     const pw = document.getElementById('signupPassword').value;
@@ -154,10 +366,27 @@ document.getElementById('signupSubmit').addEventListener('click', () => {
         signupErrorEl.textContent = 'Passwords do not match';
         return;
     }
-    // TODO: send to server/create account
-    alert('Account created (stub)');
-    lockFormSignup.style.display = 'none';
-    lockFormSetupEl.style.display = 'flex';
+    // perform SRP-style registration
+    signupErrorEl.textContent = 'Registering...';
+    try {
+        const result = await registerUser(user, pw);
+        if (result && result.status === 'ok') {
+            alert('Account created successfully');
+            lockFormSignup.style.display = 'none';
+            lockFormSetupEl.style.display = 'flex';
+        }
+        else if (result && result.error) {
+            signupErrorEl.textContent = result.error;
+        }
+        else {
+            signupErrorEl.textContent = 'Unexpected response from server';
+            console.error('register response', result);
+        }
+    }
+    catch (err) {
+        console.error('registration failed', err);
+        signupErrorEl.textContent = 'Network error';
+    }
 });
 // clear error as user types
 ['signupPassword', 'signupPasswordConfirm'].forEach(id => {
@@ -200,9 +429,26 @@ if (addEditCheckBtn) {
     });
 }
 // ── Unlock normal ─────────────────────────────────────
-document.getElementById('lockBtn').addEventListener('click', () => {
-    // TODO: verificar contraseña con (document.getElementById('lockPassword') as HTMLInputElement).value
-    unlockApp();
+document.getElementById('lockBtn').addEventListener('click', async () => {
+    console.log('Login button clicked');
+    const hint = document.querySelector('.lock-hint');
+    hint.textContent = '';
+    const pw = document.getElementById('lockPassword').value;
+    if (!pw) {
+        document.getElementById('lockPassword').focus();
+        return;
+    }
+    hint.textContent = 'Authenticating…';
+    try {
+        authToken = await authenticateUser(pw);
+        console.log('Token asignado:', authToken);
+        hint.textContent = '';
+        unlockApp();
+    }
+    catch (err) {
+        console.error('login failed', err);
+        hint.textContent = 'Login failed';
+    }
 });
 document.getElementById('lockPassword')
     .addEventListener('keydown', (e) => {
@@ -221,6 +467,10 @@ toggleEye('lockPassword', 'lockEye');
 toggleEye('setupPassword', 'setupEye');
 // ─────────────────────────────────────────────────────
 async function unlockApp() {
+    if (!authToken) {
+        alert('No auth token, cannot unlock app');
+        return;
+    }
     showScreen('screen-main');
     await loadPasswords();
 }
@@ -228,9 +478,8 @@ async function unlockApp() {
 // SCREEN NAVIGATION
 // ═══════════════════════════════════════════════════════
 function showScreen(id) {
-    var _a;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    (_a = document.getElementById(id)) === null || _a === void 0 ? void 0 : _a.classList.add('active');
+    document.getElementById(id)?.classList.add('active');
 }
 async function openSecurityScreen(pwName, pwValue) {
     // remember current active screen so back behaves correctly
@@ -275,7 +524,7 @@ function openAddEditScreen(mode, idx) {
 document.getElementById('backBtn').addEventListener('click', () => showScreen(previousScreen));
 document.getElementById('addEditBackBtn').addEventListener('click', () => showScreen(previousScreen));
 document.getElementById('addEditCancelBtn').addEventListener('click', () => showScreen(previousScreen));
-document.getElementById('addEditSaveBtn').addEventListener('click', () => {
+document.getElementById('addEditSaveBtn').addEventListener('click', async () => {
     const name = document.getElementById('addEditName').value.trim();
     const tag = document.getElementById('addEditTag').value.trim();
     const pw = document.getElementById('addEditPassword').value;
@@ -283,21 +532,41 @@ document.getElementById('addEditSaveBtn').addEventListener('click', () => {
         alert('Please fill in name and password');
         return;
     }
-    if (currentEditIndex !== null) {
-        // Edit existing
-        passwords[currentEditIndex] = { name, password: pw, tag: tag || undefined };
+    const btn = document.getElementById('addEditSaveBtn');
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving…';
+    btn.disabled = true;
+    try {
+        if (currentEditIndex !== null) {
+            // Edit existing: get the original id from passwords array
+            const originalId = passwords[currentEditIndex].name;
+            const success = await updatePassword(originalId, pw);
+            if (!success) {
+                alert('Failed to update password on server');
+                return;
+            }
+            passwords[currentEditIndex] = { name, password: pw, tag: tag || undefined };
+        }
+        else {
+            // Add new
+            const success = await addPassword(name, pw);
+            if (!success) {
+                alert('Failed to add password to server');
+                return;
+            }
+            passwords.push({ name, password: pw, tag: tag || undefined });
+        }
+        showScreen(previousScreen);
+        renderPasswordList(passwords);
+        updateTagFilter();
     }
-    else {
-        // Add new
-        passwords.push({ name, password: pw, tag: tag || undefined });
+    finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
     }
-    // TODO: send to server
-    showScreen(previousScreen);
-    renderPasswordList(passwords);
-    updateTagFilter();
 });
 // ═══════════════════════════════════════════════════════
-// LOAD PASSWORDS FROM API
+// PASSWORD API OPERATIONS
 // ═══════════════════════════════════════════════════════
 async function loadPasswords() {
     const dot = document.getElementById('statusDot');
@@ -305,25 +574,112 @@ async function loadPasswords() {
     dot.classList.add('loading');
     statusT.textContent = 'syncing…';
     try {
-        const res = await fetch(API_ENDPOINT);
+        console.log('loadPasswords called, authToken =', authToken);
+        if (!authToken) {
+            throw new Error('no auth token');
+        }
+        const headers = {
+            'Authorization': `Bearer ${authToken}`
+        };
+        const res = await fetch(API_ENDPOINT, { headers });
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+        // El servidor retorna un diccionario { id: encrypted_value, ... }
         const data = await res.json();
-        passwords = data;
+        // Convertir a array de Password
+        // Por ahora, el id es el nombre (sin cifrado implementado aún)
+        passwords = Object.entries(data).map(([id, value]) => ({
+            name: id,
+            password: value,
+            tag: undefined
+        }));
         dot.classList.remove('loading');
         dot.style.background = '';
         statusT.textContent = `${passwords.length} entries`;
     }
-    catch (_a) {
+    catch (err) {
+        console.error('loadPasswords error:', err);
         dot.classList.remove('loading');
         dot.style.background = 'var(--danger)';
         statusT.textContent = 'offline';
-        passwords = [
-            { name: 'GitHub', password: 'gh_abc123XYZ!' },
-            { name: 'Netflix', password: 'nflx_pass#99' },
-            { name: 'Gmail', password: 'gm4il$ecure01' },
-        ];
+        passwords = [];
     }
     renderPasswordList(passwords);
     updateTagFilter();
+}
+async function addPassword(id, encryptedValue) {
+    try {
+        if (!authToken) {
+            throw new Error('no auth token');
+        }
+        const res = await fetch(API_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ id, value: encryptedValue })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            console.error('addPassword error:', err);
+            return false;
+        }
+        return true;
+    }
+    catch (err) {
+        console.error('addPassword error:', err);
+        return false;
+    }
+}
+async function updatePassword(id, encryptedValue) {
+    try {
+        if (!authToken) {
+            throw new Error('no auth token');
+        }
+        const res = await fetch(`${API_ENDPOINT}/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ value: encryptedValue })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            console.error('updatePassword error:', err);
+            return false;
+        }
+        return true;
+    }
+    catch (err) {
+        console.error('updatePassword error:', err);
+        return false;
+    }
+}
+async function deletePassword(id) {
+    try {
+        if (!authToken) {
+            throw new Error('no auth token');
+        }
+        const res = await fetch(`${API_ENDPOINT}/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            console.error('deletePassword error:', err);
+            return false;
+        }
+        return true;
+    }
+    catch (err) {
+        console.error('deletePassword error:', err);
+        return false;
+    }
 }
 // ═══════════════════════════════════════════════════════
 // RENDER PASSWORD LIST
@@ -369,6 +725,11 @@ function renderPasswordList(list) {
             <polyline points="20 6 9 17 4 12"/>
           </svg>
         </button>
+        <button class="pw-btn delete-btn" data-idx="${idx}" title="Delete">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+          </svg>
+        </button>
       </div>
     </div>
   `).join('');
@@ -403,8 +764,26 @@ function renderPasswordList(list) {
             openSecurityScreen(passwords[idx].name, passwords[idx].password);
         });
     });
+    container.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const idx = parseInt(btn.dataset.idx);
+            const passwordName = passwords[idx].name;
+            if (!confirm(`Delete "${passwordName}"?`)) {
+                return;
+            }
+            btn.disabled = true;
+            const success = await deletePassword(passwordName);
+            if (!success) {
+                alert('Failed to delete password from server');
+                btn.disabled = false;
+                return;
+            }
+            passwords.splice(idx, 1);
+            renderPasswordList(passwords);
+            updateTagFilter();
+        });
+    });
 }
-// ── Vault search ──────────────────────────────────────
 document.getElementById('vaultSearch')
     .addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
@@ -448,11 +827,10 @@ function updateTagFilter() {
 // ═══════════════════════════════════════════════════════
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        var _a;
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
-        (_a = document.getElementById(`tab-${btn.dataset.tab}`)) === null || _a === void 0 ? void 0 : _a.classList.add('active');
+        document.getElementById(`tab-${btn.dataset.tab}`)?.classList.add('active');
     });
 });
 // ═══════════════════════════════════════════════════════
@@ -616,7 +994,7 @@ async function checkPwned(password) {
         }
         return 0;
     }
-    catch (_a) {
+    catch {
         return 0;
     }
 }

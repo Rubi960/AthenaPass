@@ -2,9 +2,20 @@ from flask import Flask, request, jsonify
 import srp
 import sqlite3
 import os
+from flask_cors import CORS 
 
 # crear instancia de aplicación Flask
 app = Flask(__name__)
+
+# Configurar CORS globalmente. la librería añadirá todos los
+# encabezados necesarios (Access-Control-Allow-Origin, etc.) tanto en
+# respuestas normales como en OPTIONS preflight. el `origins="*"`
+# acepta solicitudes desde `chrome-extension://…` y cualquier otro origen.
+# Si prefieres un control más fino, puedes decorar rutas con
+# `@cross_origin`.
+CORS(app, origins="*", methods=["GET","POST","PUT","DELETE","OPTIONS"],
+     allow_headers=["Content-Type","Authorization"], expose_headers=["Content-Type"],
+     max_age=3600)
 
 ### almacenamientos simples en memoria (no apto para producción)
 ### capa de persistencia (SQLite)
@@ -137,6 +148,7 @@ def auth_finish():
 
     # emitir token bearer para solicitudes API autenticadas posteriores
     token = _generate_token(username)
+    print(token)
 
     return jsonify({
         "HAMK": HAMK.hex(),
@@ -261,6 +273,7 @@ if __name__ == "__main__":
     if use_https:
         # 'adhoc' genera un certificado autofirmado en cada ejecución;
         # para producción montar archivos de certificado
-        app.run(host=host, port=port, ssl_context="adhoc")
+        # app.run(host=host, port=port, ssl_context="adhoc")
+        app.run(host=host, port=port)
     else:
         app.run(host=host, port=port)

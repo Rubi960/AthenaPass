@@ -164,6 +164,7 @@ html, body {
 /* back button in signup uses same class as user-change, but reduce margin */
 .lock-user-change#signupBackBtn {
   margin-bottom: 6px;
+  font-size: 18px;
 }
 
 
