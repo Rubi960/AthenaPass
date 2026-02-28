@@ -10,11 +10,32 @@ const APP_NAME_HTML = `${APP_NAME_PRIMARY}<span class="app-accent">${APP_NAME_AC
 document.getElementById('logoText').innerHTML = APP_NAME_HTML;
 document.getElementById('appTitle').innerHTML = APP_NAME_HTML;
 // ── Config ──────────────────────────────────────────────
+// theme helper
+function applyStoredTheme() {
+    const theme = localStorage.getItem('theme');
+    if (theme === 'light')
+        document.documentElement.classList.add('light-mode');
+}
+function updateThemeButton() {
+    const btn = document.getElementById('themeToggleBtn');
+    if (!btn)
+        return;
+    btn.textContent = document.documentElement.classList.contains('light-mode') ? 'Light' : 'Dark';
+}
+function toggleTheme() {
+    const isLight = document.documentElement.classList.toggle('light-mode');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    updateThemeButton();
+}
+// apply stored value on load
+applyStoredTheme();
+updateThemeButton();
 const API_ENDPOINT = 'http://localhost:3000/passwords';
 const EMAIL_STORAGE_KEY = 'AthenaPass_email';
 // ── State ───────────────────────────────────────────────
 let passwords = [];
 let previousScreen = 'screen-main';
+let currentEditIndex = null; // track which password we're editing
 // ═══════════════════════════════════════════════════════
 // EMAIL ENCRYPTION
 // El email se cifra con AES-GCM usando una clave derivada
@@ -107,6 +128,77 @@ document.getElementById('setupPassword')
     if (e.key === 'Enter')
         document.getElementById('setupBtn').click();
 });
+// ── Create account / signup screen ─────────────────────
+const btnCreate = document.getElementById('btnCreateUser');
+const lockFormMain = document.getElementById('lockFormMain');
+const lockFormSetupEl = document.getElementById('lockFormSetup');
+const lockFormSignup = document.getElementById('lockFormSignup');
+btnCreate.addEventListener('click', () => {
+    // show signup form
+    lockFormMain.style.display = 'none';
+    lockFormSetupEl.style.display = 'none';
+    lockFormSignup.style.display = 'flex';
+});
+// signup submit logic
+const signupErrorEl = document.getElementById('signupError');
+document.getElementById('signupSubmit').addEventListener('click', () => {
+    signupErrorEl.textContent = '';
+    const user = document.getElementById('signupUser').value.trim();
+    const pw = document.getElementById('signupPassword').value;
+    const pwc = document.getElementById('signupPasswordConfirm').value;
+    if (!user) {
+        document.getElementById('signupUser').focus();
+        return;
+    }
+    if (pw !== pwc) {
+        signupErrorEl.textContent = 'Passwords do not match';
+        return;
+    }
+    // TODO: send to server/create account
+    alert('Account created (stub)');
+    lockFormSignup.style.display = 'none';
+    lockFormSetupEl.style.display = 'flex';
+});
+// clear error as user types
+['signupPassword', 'signupPasswordConfirm'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+        signupErrorEl.textContent = '';
+    });
+});
+// back button on signup form
+document.getElementById('signupBackBtn').addEventListener('click', () => {
+    lockFormSignup.style.display = 'none';
+    initLockScreen();
+});
+// eye toggles for signup fields
+document.getElementById('signupEye').addEventListener('click', () => {
+    const inp = document.getElementById('signupPassword');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+});
+document.getElementById('signupEyeConfirm').addEventListener('click', () => {
+    const inp = document.getElementById('signupPasswordConfirm');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+});
+// theme toggle listener (settings tab may not exist until loaded but we attach here)
+const themeBtn = document.getElementById('themeToggleBtn');
+if (themeBtn)
+    themeBtn.addEventListener('click', toggleTheme);
+// logout button
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+        window.close();
+    });
+}
+// add/edit security check button
+const addEditCheckBtn = document.getElementById('addEditCheckBtn');
+if (addEditCheckBtn) {
+    addEditCheckBtn.addEventListener('click', () => {
+        if (addEditPassword.value) {
+            openSecurityScreen('Password', addEditPassword.value);
+        }
+    });
+}
 // ── Unlock normal ─────────────────────────────────────
 document.getElementById('lockBtn').addEventListener('click', () => {
     // TODO: verificar contraseña con (document.getElementById('lockPassword') as HTMLInputElement).value
@@ -116,11 +208,6 @@ document.getElementById('lockPassword')
     .addEventListener('keydown', (e) => {
     if (e.key === 'Enter')
         document.getElementById('lockBtn').click();
-});
-// ── Botón crear usuario (top-right, sin funcionalidad aún) ──
-document.getElementById('btnCreateUser').addEventListener('click', () => {
-    // TODO: implementar creación de usuario
-    console.log('Create user clicked');
 });
 // ── Toggle eye ────────────────────────────────────────
 function toggleEye(inputId, btnId) {
@@ -145,12 +232,70 @@ function showScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     (_a = document.getElementById(id)) === null || _a === void 0 ? void 0 : _a.classList.add('active');
 }
-function openSecurityScreen(pwName) {
-    previousScreen = 'screen-main';
+async function openSecurityScreen(pwName, pwValue) {
+    // remember current active screen so back behaves correctly
+    const active = document.querySelector('.screen.active');
+    previousScreen = active ? active.id : 'screen-main';
     document.getElementById('securityPwName').textContent = pwName || '—';
     showScreen('screen-security');
+    await analyzePassword(pwValue);
+}
+function openAddEditScreen(mode, idx) {
+    previousScreen = 'screen-main';
+    const titleEl = document.getElementById('addEditTitle');
+    const nameInput = document.getElementById('addEditName');
+    const tagInput = document.getElementById('addEditTag');
+    const pwInput = document.getElementById('addEditPassword');
+    if (mode === 'add') {
+        titleEl.textContent = 'Add password';
+        nameInput.value = '';
+        tagInput.value = '';
+        pwInput.value = '';
+        currentEditIndex = null;
+    }
+    else if (mode === 'edit' && idx !== undefined) {
+        titleEl.textContent = 'Edit password';
+        nameInput.value = passwords[idx].name;
+        tagInput.value = passwords[idx].tag || '';
+        pwInput.value = passwords[idx].password;
+        currentEditIndex = idx;
+    }
+    // Reset password field to hidden
+    pwInput.type = 'password';
+    // clear live check icon
+    const icon = document.getElementById('addEditCheckIcon');
+    if (icon)
+        icon.textContent = '—';
+    // if editing existing and password present, run quick live check
+    if (pwInput.value) {
+        liveCheckAddEditPassword();
+    }
+    showScreen('screen-addedit');
 }
 document.getElementById('backBtn').addEventListener('click', () => showScreen(previousScreen));
+document.getElementById('addEditBackBtn').addEventListener('click', () => showScreen(previousScreen));
+document.getElementById('addEditCancelBtn').addEventListener('click', () => showScreen(previousScreen));
+document.getElementById('addEditSaveBtn').addEventListener('click', () => {
+    const name = document.getElementById('addEditName').value.trim();
+    const tag = document.getElementById('addEditTag').value.trim();
+    const pw = document.getElementById('addEditPassword').value;
+    if (!name || !pw) {
+        alert('Please fill in name and password');
+        return;
+    }
+    if (currentEditIndex !== null) {
+        // Edit existing
+        passwords[currentEditIndex] = { name, password: pw, tag: tag || undefined };
+    }
+    else {
+        // Add new
+        passwords.push({ name, password: pw, tag: tag || undefined });
+    }
+    // TODO: send to server
+    showScreen(previousScreen);
+    renderPasswordList(passwords);
+    updateTagFilter();
+});
 // ═══════════════════════════════════════════════════════
 // LOAD PASSWORDS FROM API
 // ═══════════════════════════════════════════════════════
@@ -178,6 +323,7 @@ async function loadPasswords() {
         ];
     }
     renderPasswordList(passwords);
+    updateTagFilter();
 }
 // ═══════════════════════════════════════════════════════
 // RENDER PASSWORD LIST
@@ -213,6 +359,11 @@ function renderPasswordList(list) {
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
           </svg>
         </button>
+        <button class="pw-btn edit-btn"  data-idx="${idx}" title="Edit">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
         <button class="pw-btn check-btn" data-idx="${idx}" title="Security check">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"/>
@@ -240,10 +391,16 @@ function renderPasswordList(list) {
             });
         });
     });
+    container.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt(btn.dataset.idx);
+            openAddEditScreen('edit', idx);
+        });
+    });
     container.querySelectorAll('.check-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const idx = parseInt(btn.dataset.idx);
-            openSecurityScreen(passwords[idx].name);
+            openSecurityScreen(passwords[idx].name, passwords[idx].password);
         });
     });
 }
@@ -251,9 +408,41 @@ function renderPasswordList(list) {
 document.getElementById('vaultSearch')
     .addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
-    const filtered = passwords.filter(p => p.name.toLowerCase().includes(q));
+    const tag = document.getElementById('vaultTagFilter').value;
+    const filtered = passwords.filter(p => {
+        const matchName = p.name.toLowerCase().includes(q);
+        const matchTag = !tag || (p.tag === tag);
+        return matchName && matchTag;
+    });
     renderPasswordList(filtered);
 });
+// ── Vault Tag filter ───────────────────────────────────
+document.getElementById('vaultTagFilter')
+    .addEventListener('change', (e) => {
+    const q = document.getElementById('vaultSearch').value.toLowerCase();
+    const tag = e.target.value;
+    const filtered = passwords.filter(p => {
+        const matchName = p.name.toLowerCase().includes(q);
+        const matchTag = !tag || (p.tag === tag);
+        return matchName && matchTag;
+    });
+    renderPasswordList(filtered);
+});
+document.getElementById('vaultAddBtn').addEventListener('click', () => openAddEditScreen('add'));
+// Update tag filter options
+function updateTagFilter() {
+    const tagSet = new Set(passwords.map(p => p.tag).filter(Boolean));
+    const select = document.getElementById('vaultTagFilter');
+    const currentValue = select.value;
+    select.innerHTML = '<option value="">All tags</option>';
+    Array.from(tagSet).forEach(tag => {
+        const opt = document.createElement('option');
+        opt.value = tag;
+        opt.textContent = tag;
+        select.appendChild(opt);
+    });
+    select.value = currentValue;
+}
 // ═══════════════════════════════════════════════════════
 // TABS
 // ═══════════════════════════════════════════════════════
@@ -272,7 +461,73 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 const genLen = document.getElementById('genLen');
 const genLenVal = document.getElementById('genLenVal');
 const genOutput = document.getElementById('genOutput');
+const genCheckIcon = document.getElementById('genCheckIcon');
+const genCheckBtn = document.getElementById('genCheckBtn');
 genLen.addEventListener('input', () => { genLenVal.textContent = genLen.value; });
+// Live analysis on password output changes
+let liveAnalysisTimeout;
+async function liveCheckPassword() {
+    const pw = genOutput.value;
+    if (!pw) {
+        genCheckIcon.textContent = '—';
+        genCheckBtn.dataset.checkStatus = 'unchecked';
+        return;
+    }
+    // Run live analysis without full UI update (only icon)
+    genCheckIcon.textContent = '...';
+    const pwnedCount = await checkPwned(pw);
+    if (pwnedCount > 0) {
+        genCheckIcon.textContent = '✕';
+        genCheckIcon.style.color = 'var(--danger)';
+        genCheckIcon.style.fontSize = '18px';
+        genCheckBtn.dataset.checkStatus = 'failed';
+    }
+    else {
+        // Quick entropy check
+        const hasUpper = /[A-Z]/.test(pw);
+        const hasLower = /[a-z]/.test(pw);
+        const hasDigit = /[0-9]/.test(pw);
+        const hasSym = /[^A-Za-z0-9]/.test(pw);
+        let charset = 0;
+        if (hasUpper)
+            charset += 26;
+        if (hasLower)
+            charset += 26;
+        if (hasDigit)
+            charset += 10;
+        if (hasSym)
+            charset += 32;
+        const bits = charset > 0 ? Math.log2(Math.max(1, charset)) * pw.length : 0;
+        // Score calculation (same as analyzePassword)
+        let score = 0;
+        const e = Math.max(0, Math.min(80, bits));
+        score += Math.round((e / 80) * 40);
+        const classesCount = [hasUpper, hasLower, hasDigit, hasSym].filter(Boolean).length;
+        score += (classesCount - 1) * 5;
+        if (score < 30) {
+            genCheckIcon.textContent = '✕';
+            genCheckIcon.style.color = 'var(--danger)';
+            genCheckIcon.style.fontSize = '20px';
+            genCheckBtn.dataset.checkStatus = 'failed';
+        }
+        else if (score >= 50) {
+            genCheckIcon.textContent = '✓';
+            genCheckIcon.style.color = 'var(--accent2)';
+            genCheckIcon.style.fontSize = '20px';
+            genCheckBtn.dataset.checkStatus = 'passed';
+        }
+        else {
+            genCheckIcon.textContent = '◐';
+            genCheckIcon.style.color = 'var(--warn)';
+            genCheckIcon.style.fontSize = '20px';
+            genCheckBtn.dataset.checkStatus = 'warning';
+        }
+    }
+}
+genOutput.addEventListener('input', () => {
+    clearTimeout(liveAnalysisTimeout);
+    liveAnalysisTimeout = window.setTimeout(liveCheckPassword, 300);
+});
 ['Upper', 'Lower', 'Nums', 'Syms'].forEach(id => {
     const chk = document.getElementById(`chk${id}`);
     const label = document.getElementById(`label${id}`);
@@ -298,6 +553,7 @@ document.getElementById('genBtn').addEventListener('click', () => {
     const arr = new Uint32Array(len);
     crypto.getRandomValues(arr);
     genOutput.value = Array.from(arr).map(n => charset[n % charset.length]).join('');
+    liveCheckPassword();
 });
 document.getElementById('genCopyBtn').addEventListener('click', () => {
     if (!genOutput.value)
@@ -309,14 +565,18 @@ document.getElementById('genCopyBtn').addEventListener('click', () => {
     });
 });
 document.getElementById('genCheckBtn').addEventListener('click', () => {
-    const name = document.getElementById('genName').value.trim();
-    openSecurityScreen(name || 'Generated');
+    if (genOutput.value) {
+        openSecurityScreen('Generated', genOutput.value);
+    }
 });
-document.getElementById('genSaveBtn').addEventListener('click', () => {
-    // TODO: enviar al servidor
-    const btn = document.getElementById('genSaveBtn');
-    btn.textContent = '✅ Saved!';
-    setTimeout(() => btn.textContent = '💾 Save password', 1500);
+document.getElementById('genCopyMainBtn').addEventListener('click', () => {
+    if (!genOutput.value)
+        return;
+    navigator.clipboard.writeText(genOutput.value).then(() => {
+        const btn = document.getElementById('genCopyMainBtn');
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => btn.textContent = '📋 Copy to clipboard', 1500);
+    });
 });
 // ═══════════════════════════════════════════════════════
 // UTIL
@@ -328,3 +588,276 @@ function escHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
 }
+// ═════════════════════════════════════════════════════════════════════
+// Password analysis helpers: HIBP check (k-anonymity), entropy, structural mix
+// ═════════════════════════════════════════════════════════════════════
+function hexFromBuffer(buf) {
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function sha1Hex(text) {
+    const data = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest('SHA-1', data);
+    return hexFromBuffer(digest).toUpperCase();
+}
+async function checkPwned(password) {
+    try {
+        const hash = await sha1Hex(password);
+        const prefix = hash.slice(0, 5);
+        const suffix = hash.slice(5);
+        const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`);
+        if (!res.ok)
+            return 0;
+        const text = await res.text();
+        const lines = text.split('\n');
+        for (const line of lines) {
+            const [suf, count] = line.split(':');
+            if (suf && suf.trim().toUpperCase() === suffix)
+                return parseInt((count || '0').trim(), 10);
+        }
+        return 0;
+    }
+    catch (_a) {
+        return 0;
+    }
+}
+function charType(ch) {
+    if (/[A-Z]/.test(ch))
+        return 'upper';
+    if (/[a-z]/.test(ch))
+        return 'lower';
+    if (/[0-9]/.test(ch))
+        return 'digit';
+    return 'symbol';
+}
+function classifyEntropy(bits) {
+    if (bits < 28)
+        return 'Very weak';
+    if (bits < 36)
+        return 'Weak';
+    if (bits < 60)
+        return 'Good';
+    return 'Strong';
+}
+async function analyzePassword(pw) {
+    const sub = document.querySelector('.security-sub');
+    if (!pw) {
+        sub.innerHTML = '<div>No password provided for analysis.</div>';
+        return;
+    }
+    // HIBP check
+    sub.innerHTML = `<div>Checking breach database…</div>`;
+    const pwnedCount = await checkPwned(pw);
+    // Character classes
+    const hasUpper = /[A-Z]/.test(pw);
+    const hasLower = /[a-z]/.test(pw);
+    const hasDigit = /[0-9]/.test(pw);
+    const hasSym = /[^A-Za-z0-9]/.test(pw);
+    // Charset size estimate
+    let charset = 0;
+    if (hasUpper)
+        charset += 26;
+    if (hasLower)
+        charset += 26;
+    if (hasDigit)
+        charset += 10;
+    if (hasSym)
+        charset += 32;
+    const bits = charset > 0 ? Math.log2(Math.max(1, charset)) * pw.length : 0;
+    const entropyClass = classifyEntropy(bits);
+    // Structural mixing: detect runs of same character type
+    let maxRun = 1;
+    let curRun = 1;
+    for (let i = 1; i < pw.length; i++) {
+        if (charType(pw[i]) === charType(pw[i - 1])) {
+            curRun++;
+            if (curRun > maxRun)
+                maxRun = curRun;
+        }
+        else {
+            curRun = 1;
+        }
+    }
+    const classesCount = [hasUpper, hasLower, hasDigit, hasSym].filter(Boolean).length;
+    // Define mixing quality: runs of 1 or 2 are perfect, 3 is acceptable, >3 is poor
+    let mixingStatus = 'perfect';
+    if (maxRun <= 2 && classesCount >= 2)
+        mixingStatus = 'perfect';
+    else if (maxRun === 3 && classesCount >= 2)
+        mixingStatus = 'acceptable';
+    else
+        mixingStatus = 'poor';
+    // Build result HTML
+    const pwnHtml = pwnedCount > 0
+        ? `<div class="security-row"><strong>Pwned:</strong> <span style="color: var(--danger)">Yes</span> — seen ${pwnedCount.toLocaleString()} times</div>`
+        : `<div class="security-row"><strong>Pwned:</strong> <span style="color: var(--accent2)">No known leaks</span></div>`;
+    const entropyHtml = `<div class="security-row"><strong>Entropy:</strong> ${bits.toFixed(1)} bits — ${entropyClass}</div>`;
+    const structureParts = [];
+    structureParts.push(`<span>${hasUpper ? 'Upper' : '—'}</span>`);
+    structureParts.push(`<span>${hasLower ? 'Lower' : '—'}</span>`);
+    structureParts.push(`<span>${hasDigit ? 'Digits' : '—'}</span>`);
+    structureParts.push(`<span>${hasSym ? 'Symbols' : '—'}</span>`);
+    const mixingLabel = mixingStatus === 'perfect' ? `<span style="color: var(--accent2)">Good mix</span>`
+        : mixingStatus === 'acceptable' ? `<span style="color: var(--warn)">Acceptable mix</span>`
+            : `<span style="color: var(--danger)">Poor mix</span>`;
+    const mixingHtml = `<div class="security-row"><strong>Structure:</strong> ${mixingLabel}` +
+        `<div class="security-small">Character classes: ${structureParts.join(' · ')} — max same-type run: ${maxRun}</div></div>`;
+    const advice = [];
+    if (pwnedCount > 0)
+        advice.push('Choose a different password (found in breaches).');
+    if (bits < 36)
+        advice.push('Increase length and include more character classes.');
+    if (mixingStatus == "poor")
+        advice.push('Avoid long runs of the same character type; mix letters, digits and symbols.');
+    const adviceHtml = `<div class="security-row"><strong>Advice:</strong> ${advice.length ? advice.join(' ') : 'No immediate action required.'}</div>`;
+    // Compute a simple overall score (0-100)
+    let score = 0;
+    if (pwnedCount > 0) {
+        // HaveIBeenPwned should heavily penalize the score
+        score = 5;
+    }
+    else {
+        // entropy contributes up to 40 points (0..80 bits mapped)
+        const e = Math.max(0, Math.min(80, bits));
+        score += Math.round((e / 80) * 40);
+        // mixing contributes: perfect -> 40, acceptable -> 25, poor -> 10
+        score += mixingStatus === 'perfect' ? 40 : mixingStatus === 'acceptable' ? 25 : 10;
+        // small bonus for having many classes
+        score += (classesCount - 1) * 5;
+        score = Math.min(100, Math.max(0, score));
+    }
+    // Update gradient on the logo accent only (avoid changing app title)
+    const logoAccent = document.querySelector('#logoText .app-accent');
+    const red = '#f24';
+    const yellow = '#f7b500';
+    const green = '#3fb950';
+    const pct = score; // 0..100
+    const grad = `linear-gradient(90deg, ${red} 0%, ${red} ${100 - pct}%, ${green} ${100 - pct}%, ${green} 100%)`;
+    if (logoAccent) {
+        logoAccent.style.background = grad;
+        logoAccent.classList.add('gradient');
+        logoAccent.style.webkitBackgroundClip = 'text';
+        logoAccent.style.color = 'transparent';
+    }
+    // Meter HTML
+    const meterHtml = `<div class="security-row"><strong>Score:</strong> <span style="font-family: 'Space Mono', monospace;">${score}%</span>` +
+        `<div class="security-meter"><div class="meter-fill" style="width:${score}%"></div></div></div>`;
+    sub.innerHTML = pwnHtml + entropyHtml + mixingHtml + adviceHtml + meterHtml;
+    // Update shield and label color
+    const shield = document.querySelector('.security-shield');
+    const label = document.querySelector('.security-label');
+    if (shield) {
+        if (score < 30)
+            shield.style.filter = 'drop-shadow(0 0 20px rgba(242,81,73,0.45))';
+        else if (score < 60)
+            shield.style.filter = 'drop-shadow(0 0 20px rgba(247,181,0,0.35))';
+        else
+            shield.style.filter = 'drop-shadow(0 0 20px rgba(63,185,80,0.45))';
+    }
+    if (label) {
+        if (score < 30)
+            label.style.color = 'var(--danger)';
+        else if (score < 60)
+            label.style.color = 'var(--warn)';
+        else
+            label.style.color = 'var(--accent2)';
+    }
+    label.textContent = score < 10 ? "Insecure" : score < 30 ? 'weak password' : score < 60 ? 'Moderate password' : 'Strong password';
+}
+// ═════════════════════════════════════════════════════════════════════
+// ADD/EDIT SCREEN HANDLERS
+// ═════════════════════════════════════════════════════════════════════
+const addEditLen = document.getElementById('addEditLen');
+const addEditLenVal = document.getElementById('addEditLenVal');
+const addEditPassword = document.getElementById('addEditPassword');
+const addEditEye = document.getElementById('addEditEye');
+// Password visibility toggle
+addEditEye.addEventListener('click', () => {
+    addEditPassword.type = addEditPassword.type === 'password' ? 'text' : 'password';
+});
+// Length slider
+addEditLen.addEventListener('input', () => {
+    addEditLenVal.textContent = addEditLen.value;
+});
+// Live check for add/edit password field
+let addEditLiveTimeout;
+async function liveCheckAddEditPassword() {
+    const addEditCheckIcon = document.getElementById('addEditCheckIcon');
+    const pw = addEditPassword.value;
+    if (!pw) {
+        addEditCheckIcon.textContent = '—';
+        return;
+    }
+    addEditCheckIcon.textContent = '...';
+    const pwnedCount = await checkPwned(pw);
+    if (pwnedCount > 0) {
+        addEditCheckIcon.textContent = '✕';
+        addEditCheckIcon.style.color = 'var(--danger)';
+    }
+    else {
+        const hasUpper = /[A-Z]/.test(pw);
+        const hasLower = /[a-z]/.test(pw);
+        const hasDigit = /[0-9]/.test(pw);
+        const hasSym = /[^A-Za-z0-9]/.test(pw);
+        let charset = 0;
+        if (hasUpper)
+            charset += 26;
+        if (hasLower)
+            charset += 26;
+        if (hasDigit)
+            charset += 10;
+        if (hasSym)
+            charset += 32;
+        const bits = charset > 0 ? Math.log2(Math.max(1, charset)) * pw.length : 0;
+        let score = 0;
+        const e = Math.max(0, Math.min(80, bits));
+        score += Math.round((e / 80) * 40);
+        const classesCount = [hasUpper, hasLower, hasDigit, hasSym].filter(Boolean).length;
+        score += (classesCount - 1) * 5;
+        if (score < 30) {
+            addEditCheckIcon.textContent = '✕';
+            addEditCheckIcon.style.color = 'var(--danger)';
+        }
+        else if (score >= 50) {
+            addEditCheckIcon.textContent = '✓';
+            addEditCheckIcon.style.color = 'var(--accent2)';
+        }
+        else {
+            addEditCheckIcon.textContent = '◐';
+            addEditCheckIcon.style.color = 'var(--warn)';
+        }
+    }
+}
+addEditPassword.addEventListener('input', () => {
+    clearTimeout(addEditLiveTimeout);
+    addEditLiveTimeout = window.setTimeout(liveCheckAddEditPassword, 300);
+});
+// Character set checkboxes
+['Upper', 'Lower', 'Nums', 'Syms'].forEach(id => {
+    const chk = document.getElementById(`addEditChk${id}`);
+    const label = document.getElementById(`addEditLabel${id}`);
+    chk.addEventListener('change', () => label.classList.toggle('checked', chk.checked));
+});
+// Generate button in add/edit screen
+document.getElementById('addEditGenBtn').addEventListener('click', () => {
+    const len = parseInt(addEditLen.value);
+    const upper = document.getElementById('addEditChkUpper').checked;
+    const lower = document.getElementById('addEditChkLower').checked;
+    const nums = document.getElementById('addEditChkNums').checked;
+    const syms = document.getElementById('addEditChkSyms').checked;
+    let charset = '';
+    if (upper)
+        charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (lower)
+        charset += 'abcdefghijklmnopqrstuvwxyz';
+    if (nums)
+        charset += '0123456789';
+    if (syms)
+        charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+    if (!charset)
+        return;
+    const arr = new Uint32Array(len);
+    crypto.getRandomValues(arr);
+    addEditPassword.value = Array.from(arr).map(n => charset[n % charset.length]).join('');
+    // trigger live check immediately after generation
+    liveCheckAddEditPassword();
+});

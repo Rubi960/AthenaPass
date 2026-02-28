@@ -13,11 +13,7 @@
 <div class="screen active" id="screen-lock">
   <div class="lock-bg"></div>
   <button class="lock-create-btn" id="btnCreateUser" title="Create account">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-      <circle cx="12" cy="7" r="4"/>
-      <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
-    </svg>
+    Create new user
   </button>
   <div class="lock-logo">
     <!-- APP NAME — editar APP_NAME_PRIMARY / APP_NAME_ACCENT en popup.js -->
@@ -58,6 +54,32 @@
     </div>
     <button class="lock-btn" id="setupBtn">Continue</button>
   </div>
+
+  <div class="lock-email-setup" id="lockFormSignup" style="display:none">
+    <div class="lock-setup-title">
+      <button class="lock-user-change" id="signupBackBtn">back</button>
+      Create account
+    </div>
+    <input class="lock-input" type="text" id="signupUser" placeholder="Username" />
+    <div class="lock-input-wrap">
+      <input class="lock-input" type="password" id="signupPassword" placeholder="Password" />
+      <button class="lock-eye" id="signupEye">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+    <div class="lock-input-wrap">
+      <input class="lock-input" type="password" id="signupPasswordConfirm" placeholder="Confirm password" />
+      <button class="lock-eye" id="signupEyeConfirm">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+    <div id="signupError" class="signup-error"></div>
+    <button class="lock-btn" id="signupSubmit">Submit</button>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
@@ -88,7 +110,13 @@
 
     <!-- ── TAB: VAULT ── -->
     <div class="tab-panel active" id="tab-vault">
-      <input class="vault-search" type="text" id="vaultSearch" placeholder="Search passwords…" />
+      <div class="vault-header-row">
+        <input class="vault-search" type="text" id="vaultSearch" placeholder="Search passwords…" />
+        <button class="vault-add-btn" id="vaultAddBtn" title="Add new password">add +</button>
+      </div>
+      <select class="vault-tag-filter" id="vaultTagFilter">
+        <option value="">All tags</option>
+      </select>
       <div class="pw-list" id="pwList">
         <div class="empty-state">
           <div class="empty-icon">🔒</div>
@@ -99,11 +127,6 @@
 
     <!-- ── TAB: GENERATE ── -->
     <div class="tab-panel" id="tab-generate">
-      <div class="gen-section">
-        <div class="gen-label">Name</div>
-        <input class="gen-input" type="text" id="genName" placeholder="e.g. GitHub, Netflix…" />
-      </div>
-
       <div class="gen-section">
         <div class="gen-label">Length — <span id="genLenVal">12</span> chars</div>
         <div class="slider-row">
@@ -149,14 +172,12 @@
               <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
             </svg>
           </button>
-          <!-- Security check button -->
-          <button class="gen-icon-btn gen-check-btn" id="genCheckBtn" title="Check security">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
+          <!-- Security check button with dynamic icon -->
+          <button class="gen-icon-btn gen-check-btn" id="genCheckBtn" title="Check security" data-check-status="unchecked">
+            <span id="genCheckIcon">—</span>
           </button>
         </div>
-        <button class="save-btn" id="genSaveBtn">💾 Save password</button>
+        <button class="save-btn" id="genCopyMainBtn">📋 Copy to clipboard</button>
       </div>
     </div>
 
@@ -194,6 +215,17 @@
           </div>
           <div class="settings-badge">—</div>
         </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Theme</div>
+            <div class="settings-row-sub">Light / Dark mode</div>
+          </div>
+          <button class="settings-badge" id="themeToggleBtn">Dark</button>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Logout</div>
+          <button class="settings-badge" id="logoutBtn">Exit</button>
+        </div>
       </div>
     </div>
 
@@ -219,6 +251,82 @@
     <div class="security-pw-name" id="securityPwName">—</div>
     <div class="security-sub">
       <!-- TODO: aquí irá el análisis real de la contraseña -->
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SCREEN: ADD/EDIT PASSWORD                  -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="screen" id="screen-addedit">
+  <div class="addedit-header">
+    <button class="back-btn" id="addEditBackBtn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Back
+    </button>
+    <div class="addedit-title" id="addEditTitle">Add password</div>
+  </div>
+  <div class="addedit-body">
+    <div class="addedit-section">
+      <div class="addedit-label">Service name</div>
+      <input class="addedit-input" type="text" id="addEditName" placeholder="e.g. GitHub, Netflix…" />
+    </div>
+    <div class="addedit-section">
+      <div class="addedit-label">Tag</div>
+      <input class="addedit-input" type="text" id="addEditTag" placeholder="e.g. Work, Personal…" />
+    </div>
+    <div class="addedit-section">
+      <div class="addedit-label">Password</div>
+      <div class="addedit-input-wrap">
+        <input class="addedit-input" type="password" id="addEditPassword" placeholder="Enter password" />
+        <button class="gen-icon-btn gen-check-btn addedit-check-btn" id="addEditCheckBtn" title="Check security" data-check-status="unchecked">
+          <span id="addEditCheckIcon">—</span>
+        </button>
+        <button class="addedit-eye" id="addEditEye">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="addedit-divider">Generate Password</div>
+    <div class="addedit-section">
+      <div class="addedit-label">Length — <span id="addEditLenVal">12</span> chars</div>
+      <div class="slider-row">
+        <input type="range" id="addEditLen" min="8" max="32" value="12" step="1" />
+      </div>
+    </div>
+    <div class="addedit-section">
+      <div class="addedit-label">Character set</div>
+      <div class="checks">
+        <label class="check-item checked" id="addEditLabelUpper">
+          <input type="checkbox" id="addEditChkUpper" checked />
+          <span class="tab-icon">A</span>
+          <span class="check-label-text">Upper</span>
+        </label>
+        <label class="check-item checked" id="addEditLabelLower">
+          <input type="checkbox" id="addEditChkLower" checked />
+          <span class="tab-icon">a</span>
+          <span class="check-label-text">Lower</span>
+        </label>
+        <label class="check-item checked" id="addEditLabelNums">
+          <input type="checkbox" id="addEditChkNums" checked />
+          <span class="tab-icon">0</span>
+          <span class="check-label-text">Nums</span>
+        </label>
+        <label class="check-item" id="addEditLabelSyms">
+          <input type="checkbox" id="addEditChkSyms" />
+          <span class="tab-icon">#</span>
+          <span class="check-label-text">Syms</span>
+        </label>
+      </div>
+    </div>
+    <button class="addedit-gen-btn" id="addEditGenBtn">⚡ Generate</button>
+    <div class="addedit-actions">
+      <button class="addedit-btn addedit-save" id="addEditSaveBtn">Save</button>
+      <button class="addedit-btn addedit-cancel" id="addEditCancelBtn">Cancel</button>
     </div>
   </div>
 </div>
