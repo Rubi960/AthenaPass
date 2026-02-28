@@ -1,0 +1,23 @@
+{
+  "name": "AthenaPass_desktop",
+  "version": "1.0.0",
+  "description": "AthenaPass - Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^26.8.1"
+  },
+  "scripts": {
+  "start": "electron .",
+  "build:linux":   "electron-builder --linux",
+  "build:windows": "electron-builder --win"
+},
+"build": {
+  "appId": "com.athenaPass",
+  "linux":   { "target": "AppImage" },
+  "win":     { "target": "nsis" }
+}
+}
