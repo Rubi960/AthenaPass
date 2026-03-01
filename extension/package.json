@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "description": "",
   "main": "popup.js",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
   "scripts": {
+    "build": "tsc",
     "dev": "tsc --watch",
     "start:chrome": "web-ext run --target=chromium --start-url=about:newtab"
   },

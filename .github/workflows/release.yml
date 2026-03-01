@@ -1,10 +1,10 @@
 name: Release
 
 on:
-  workflow_dispatch:   # botón manual para probar
+  workflow_dispatch:
   push:
     tags:
-      - 'v*.*.*'       # se dispara con: git tag v1.0.0 && git push origin v1.0.0
+      - 'v*.*.*'
 
 jobs:
   # ─────────────────────────────────────
@@ -25,7 +25,7 @@ jobs:
 
       - name: Compilar TypeScript
         working-directory: extension
-        run: npx tsc
+        run: npm run build
 
       - name: Empaquetar extensión
         run: |
@@ -35,7 +35,6 @@ jobs:
             popup.html \
             style.css \
             manifest.json
-          # Si tienes iconos u otros assets, añádelos aquí
 
       - uses: actions/upload-artifact@v4
         with:
@@ -57,13 +56,13 @@ jobs:
       - name: Sincronizar extension → desktop
         run: node scripts/sync-desktop.js
 
-      - name: Compilar TypeScript en desktop
-        working-directory: desktop
-        run: npx tsc
-
       - name: Instalar dependencias desktop
         working-directory: desktop
         run: npm install
+
+      - name: Compilar TypeScript
+        working-directory: desktop
+        run: npm run build
 
       - name: Build Linux (AppImage)
         working-directory: desktop
@@ -89,13 +88,13 @@ jobs:
       - name: Sincronizar extension → desktop
         run: node scripts/sync-desktop.js
 
-      - name: Compilar TypeScript en desktop
-        working-directory: desktop
-        run: npx tsc
-
       - name: Instalar dependencias desktop
         working-directory: desktop
         run: npm install
+
+      - name: Compilar TypeScript
+        working-directory: desktop
+        run: npm run build
 
       - name: Build Windows (NSIS)
         working-directory: desktop
@@ -109,17 +108,16 @@ jobs:
   # ─────────────────────────────────────
   # 4. Crear la GitHub Release
   # ─────────────────────────────────────
-#  release:
-#    needs: [build-extension, build-desktop-linux, build-desktop-windows]
-#    runs-on: ubuntu-latest
-#    permissions:
-#      contents: write
-#    steps:
-#      - uses: actions/download-artifact@v4
-#        with:
-#          path: artifacts/
-#
-#      - uses: softprops/action-gh-release@v2
-#        with:
-#          files: artifacts/**/*
-#          generate_release_notes: true   # genera notas desde los commits automáticamente
+  # release:
+  #   needs: [build-extension, build-desktop-linux, build-desktop-windows]
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         path: artifacts/
+  #     - uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: artifacts/**/*
+  #         generate_release_notes: true

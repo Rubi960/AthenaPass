@@ -148,6 +148,13 @@ html, body {
 }
 .lock-eye:hover { color: var(--text); }
 
+.lock-user-back {
+  position: absolute; top: 10px; left: 10px;
+  background: none; border: none; color: var(--text2);
+  cursor: pointer; padding: 4px; display: flex; align-items: center;
+}
+.lock-user-back:hover { color: var(--text); }
+
 .lock-create-btn {
   position: absolute; top: 10px; right: 10px;
   background: none; border: none; color: var(--text2);
@@ -160,6 +167,21 @@ html, body {
   font-size: 11px;
   margin: 4px 0 8px 0;
 }
+
+/* inline banner for general messages (info, success, error) */
+.app-message {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  padding: 8px 12px;
+  display: none;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 1000;
+}
+.app-message.info { background: var(--accent); color: #0d1117; }
+.app-message.success { background: var(--accent2); color: #0d1117; }
+.app-message.error { background: var(--danger); color: #0d1117; }
 
 /* back button in signup uses same class as user-change, but reduce margin */
 .lock-user-change#signupBackBtn {

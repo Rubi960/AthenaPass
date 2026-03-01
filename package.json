@@ -1,9 +1,10 @@
 {
   "scripts": {
     "sync": "node scripts/sync-desktop.js",
+    "install:all": "npm install --prefix extension && npm install --prefix desktop",
     "build:extension": "cd extension && npm run start:chrome",
     "build:desktop:linux": "npm run sync && cd desktop && npm run build:linux",
     "build:desktop:windows": "npm run sync && cd desktop && npm run build:windows",
-    "build:all": "npm run build:extension && npm run build:desktop:linux && npm run build:desktop:windows"
+    "build:all": "npm run build:extension && npm run build:desktop:linux"
   }
 }

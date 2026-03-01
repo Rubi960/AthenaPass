@@ -5,10 +5,12 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "build": "tsc",
     "build:linux": "electron-builder --linux",
     "build:windows": "electron-builder --win"
   },
   "devDependencies": {
+    "typescript": "^5.0.0",
     "electron": "^29.0.0",
     "electron-builder": "^26.8.1"
   },
