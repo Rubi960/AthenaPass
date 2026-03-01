@@ -7,9 +7,9 @@ const path = require('path');
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 380,
-    height: 520,
-    resizable: false,
+    width: 400,
+    height: 540,
+    useContentSize: true,
     title: 'Search Explorer',
     webPreferences: {
       nodeIntegration: false,
