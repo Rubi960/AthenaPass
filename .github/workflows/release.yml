@@ -112,16 +112,16 @@ jobs:
   # ─────────────────────────────────────
   # 4. Crear la GitHub Release
   # ─────────────────────────────────────
-  # release:
-  #   needs: [build-extension, build-desktop-linux, build-desktop-windows]
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         path: artifacts/
-  #     - uses: softprops/action-gh-release@v2
-  #       with:
-  #         files: artifacts/**/*
-  #         generate_release_notes: true
+  release:
+    needs: [build-extension, build-desktop-linux, build-desktop-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
