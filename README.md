@@ -10,13 +10,13 @@ SPDX-License-Identifier: MIT
 
 - [Table of Contents](#table-of-contents)
 - [:scroll: Description](#scroll-description)
-- [Authors :black\_nib:](#authors-black_nib)
-- [Features](#features)
+- [:black\_nib: Authors](#black_nib-authors)
+- [:beginner: Features](#beginner-features)
 - [:file\_folder: Repository Structure](#file_folder-repository-structure)
-- [Installation](#installation)
+- [:electric\_plug: Installation](#electric_plug-installation)
 - [:wrench: Usage](#wrench-usage)
 - [:clipboard: Development \& Contribution](#clipboard-development--contribution)
-- [Running locally](#running-locally)
+  - [Running locally](#running-locally)
 - [:gear: Deployment](#gear-deployment)
 - [:balance\_scale: License](#balance_scale-license)
 
