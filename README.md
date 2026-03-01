@@ -127,7 +127,8 @@ service and associated deployment artifacts.
 
    ```bash
    chmod +x docker/setup.sh
-   docker/setup.sh
+   cd docker
+   ./setup.sh
    ```
 
    Alternatively, create a Python venv, install requirements and run `server.py`:
