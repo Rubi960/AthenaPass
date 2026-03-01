@@ -1,4 +1,9 @@
 #!/bin/bash
+
+# SPDX-FileCopyrightText: 2026 Rubi960 & Ryosh1
+#
+# SPDX-License-Identifier: MIT
+
 # AthenaPass - Quick Setup
 
 set -e

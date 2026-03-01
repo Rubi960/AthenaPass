@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Rubi960 & Ryosh1
+#
+# SPDX-License-Identifier: MIT
+
 import os
 import argparse
 import requests

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Rubi960 & Ryosh1
+//
+// SPDX-License-Identifier: MIT
+
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 

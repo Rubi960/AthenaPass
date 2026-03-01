@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Rubi960 & Ryosh1
+//
+// SPDX-License-Identifier: MIT
+
 const fs = require('fs');
 const path = require('path');
 

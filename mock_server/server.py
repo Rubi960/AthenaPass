@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Rubi960 & Ryosh1
+#
+# SPDX-License-Identifier: MIT
+
 from flask import Flask, jsonify 
 from flask_cors import CORS 
 
