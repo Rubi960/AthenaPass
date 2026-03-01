@@ -1,0 +1,23 @@
+name: Trivy - Escaneo de imagen Docker
+
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  trivy-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Build de la imagen
+        run: docker build -t docker/Dockerfile .
+
+      - name: Escanear imagen Docker
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: 'docker/Dockerfile'
+          severity: 'CRITICAL,HIGH'
+          scanners: 'vuln,secret,misconfig'
