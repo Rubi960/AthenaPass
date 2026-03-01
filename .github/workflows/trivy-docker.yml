@@ -12,12 +12,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build de la imagen
-        run: docker build -t docker/Dockerfile .
+        run: docker build -f docker/Dockerfile -t athenapass docker/
 
       - name: Escanear imagen Docker
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'image'
-          image-ref: 'docker/Dockerfile'
+          image-ref: 'athenapass'
           severity: 'CRITICAL,HIGH'
           scanners: 'vuln,secret,misconfig'
