@@ -6,6 +6,9 @@
   "devDependencies": {
     "typescript": "^5.0.0"
   },
+  "dependencies": {
+    "web-ext": "^9.3.0"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
